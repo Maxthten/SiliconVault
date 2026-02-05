@@ -1,7 +1,7 @@
 {
   "name": "siliconvault",
-  "productName": "SiliconVault", 
-  "version": "1.0.0",
+  "productName": "SiliconVault",
+  "version": "1.1.0",
   "description": "电子元器件库存管理系统",
   "main": "./out/main/index.js",
   "author": "Maxton Niu",
@@ -26,6 +26,8 @@
     "@vicons/ionicons5": "^0.13.0",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
+    "charts": "^0.0.3",
+    "echarts": "^6.0.0",
     "electron-store": "^8.1.0",
     "naive-ui": "^2.43.2",
     "papaparse": "^5.5.3",
@@ -76,22 +78,21 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
-     "nsis": {
+    "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "allowElevation": true,
-
       "shortcutName": "SiliconVault",
       "createDesktopShortcut": true,
-
       "license": "resources/license.txt",
-
       "installerIcon": "resources/icon.ico",
       "uninstallerIcon": "resources/icon.ico",
       "installerHeaderIcon": "resources/icon.ico",
@@ -99,12 +100,16 @@
     },
     "mac": {
       "icon": "resources/icon.icns",
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.productivity"
     },
     "linux": {
       "icon": "resources/icon.png",
-      "target": ["AppImage"]
+      "target": [
+        "AppImage"
+      ]
     }
   }
 }

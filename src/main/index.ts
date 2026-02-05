@@ -8,6 +8,7 @@ import { maintenanceManager } from './maintenance'
 import fs from 'fs'
 import Store from 'electron-store'
 import { pathToFileURL } from 'url' 
+import { analyticsManager } from './analytics'
 
 const store = new Store()
 
@@ -263,6 +264,10 @@ app.whenReady().then(() => {
       console.error('导入执行失败', e)
       throw e
     }
+  })
+  // --- 消耗统计看板 ---
+  ipcMain.handle('get-consumption-stats', (_, { range, useMock }) => {
+    return analyticsManager.getConsumptionStats(range, useMock)
   })
 
   // --- 数据维护与清理 ---

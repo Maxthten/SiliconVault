@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { NModal, NCard, NInputNumber, NButton, NCollapse, NCollapseItem, NTable, useMessage, useDialog } from 'naive-ui'
 
 const props = defineProps<{
@@ -9,12 +9,66 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show', 'success'])
 const message = useMessage()
-const dialog = useDialog() // 引入 Dialog 用于二次确认
+const dialog = useDialog()
 
 const multiplier = ref(1)
 const deductionList = ref<any[]>([])
 
-// 监听打开
+// 计算库存允许的最大生产套数
+const maxBuildable = computed(() => {
+  if (!deductionList.value.length) return 0
+  
+  let minSets = Infinity
+  for (const item of deductionList.value) {
+    if (item.base_qty <= 0) continue
+    const sets = Math.floor(item.current_stock / item.base_qty)
+    if (sets < minSets) minSets = sets
+  }
+  return minSets === Infinity ? 0 : Math.max(0, minSets)
+})
+
+// 识别当前的短板元件
+const shortageItem = computed(() => {
+  if (!deductionList.value.length) return null
+  
+  let minSets = Infinity
+  let target = null
+  for (const item of deductionList.value) {
+    if (item.base_qty <= 0) continue
+    const sets = Math.floor(item.current_stock / item.base_qty)
+    if (sets < minSets) {
+      minSets = sets
+      target = item
+    }
+  }
+  return target
+})
+
+// 决定显示的 Primary 和 Secondary 信息
+const getItemDisplay = (item: any) => {
+  const isPassive = /电阻|电容|电感|Resistor|Capacitor|Inductor/i.test(item.category || '') || 
+                    /电阻|电容|电感/i.test(item.name || '')
+
+  const hasValue = !!item.value
+
+  let primary = item.name
+  let secondaryParts: string[] = []
+
+  if (isPassive && hasValue) {
+    primary = item.value
+    secondaryParts.push(item.name)
+  } else {
+    if (hasValue) secondaryParts.push(item.value)
+  }
+
+  if (item.package) secondaryParts.push(item.package)
+
+  return {
+    primary,
+    secondary: secondaryParts.join(' · ')
+  }
+}
+
 watch(() => props.show, async (val) => {
   if (val && props.project) {
     multiplier.value = 1
@@ -27,47 +81,45 @@ watch(() => props.show, async (val) => {
   }
 })
 
-// 自动计算扣减量
 const updateDeductions = () => {
   deductionList.value.forEach(item => {
     item.deduct_qty = item.base_qty * multiplier.value
   })
 }
 
-// 🟢 核心：带检查的执行逻辑
+const setMaxQuantity = () => {
+  if (maxBuildable.value > 0) {
+    multiplier.value = maxBuildable.value
+    updateDeductions()
+  } else {
+    message.warning('当前库存不足以生产任何套件')
+  }
+}
+
 const preCheckAndExecute = () => {
-  // 1. 找出库存不足的项
   const lackItems = deductionList.value.filter(item => item.current_stock < item.deduct_qty)
   
   if (lackItems.length > 0) {
-    // 2. 如果有缺货，弹出警告
-    const names = lackItems.map(i => `${i.name}`).join('、')
-    const totalCount = lackItems.length
+    const names = lackItems.map(i => getItemDisplay(i).primary).join('、')
     
     dialog.warning({
-      title: '⚠️ 库存不足警告',
-      content: `以下 ${totalCount} 种元件库存不足：\n[ ${names} ]\n\n强行扣减将导致库存变为负数，请生产后尽快补货！`,
-      positiveText: '明白，继续执行',
+      title: '库存不足警告',
+      content: `以下 ${lackItems.length} 种元件库存不足：\n[ ${names} ]\n\n强行扣减将导致库存变为负数，请确认是否继续？`,
+      positiveText: '继续执行',
       negativeText: '取消',
-      onPositiveClick: () => {
-        doExecute() // 用户确认后，继续
-      }
+      onPositiveClick: doExecute
     })
   } else {
-    // 3. 库存充足，直接二次确认
     dialog.success({
       title: '确认生产',
       content: `确定要扣减 ${multiplier.value} 套 BOM 库存吗？`,
       positiveText: '确定扣减',
       negativeText: '取消',
-      onPositiveClick: () => {
-        doExecute()
-      }
+      onPositiveClick: doExecute
     })
   }
 }
 
-// 执行数据库操作
 const doExecute = async () => {
   try {
     const payload = deductionList.value.map(i => ({
@@ -88,42 +140,74 @@ const doExecute = async () => {
 <template>
   <n-modal :show="show" @update:show="(v) => emit('update:show', v)">
     <n-card 
-      title="🏭 生产执行 (库存扣减)" 
+      title="生产执行 (库存扣减)" 
       class="run-modal" 
       :bordered="false" 
       size="huge"
       role="dialog" 
       aria-modal="true"
     >
-      <div class="control-panel">
-        <div class="label">本次生产数量 (PCS):</div>
-        <n-input-number 
-          v-model:value="multiplier" 
-          :min="1" 
-          size="large" 
-          class="multiplier-input"
-          @update:value="updateDeductions"
-        >
-          <template #suffix>套</template>
-        </n-input-number>
+      <div class="control-container">
+        <div class="control-panel">
+          <div class="label">生产数量 (PCS):</div>
+          
+          <div class="input-group">
+            <n-input-number 
+              v-model:value="multiplier" 
+              :min="1" 
+              size="large" 
+              class="multiplier-input"
+              @update:value="updateDeductions"
+            >
+              <template #suffix>套</template>
+            </n-input-number>
+
+            <n-button 
+              secondary 
+              type="primary" 
+              size="large" 
+              class="max-btn"
+              @click="setMaxQuantity"
+            >
+              最大 ({{ maxBuildable }})
+            </n-button>
+          </div>
+        </div>
+
+        <div class="stock-info" :class="{ 'stock-warning': multiplier > maxBuildable }">
+          <span v-if="multiplier <= maxBuildable">
+            当前库存支持生产 <strong>{{ maxBuildable }}</strong> 套
+            <span v-if="shortageItem" class="limit-info">
+              (受限于: {{ getItemDisplay(shortageItem).primary }})
+            </span>
+          </span>
+          <span v-else>
+            ⚠️ 数量超出库存上限 (最大 {{ maxBuildable }} 套)
+          </span>
+        </div>
       </div>
 
       <div class="detail-panel">
         <n-collapse arrow-placement="right">
-          <n-collapse-item :title="`📦 扣减清单预览 (共需 ${deductionList.length} 种元件)`" name="1">
+          <n-collapse-item :title="`扣减清单预览 (共 ${deductionList.length} 种)`" name="1">
             <div class="table-container">
               <n-table size="small" :single-line="false" class="dark-table">
                 <thead>
                   <tr>
-                    <th>元件</th>
+                    <th width="45%">元件信息</th>
                     <th>当前库存</th>
                     <th>本次扣减</th>
-                    <th>预计剩余</th>
+                    <th>剩余</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="item in deductionList" :key="item.inventory_id">
-                    <td>{{ item.name }} <span class="sub-val">{{ item.value }}</span></td>
+                    <td>
+                      <div class="cell-content">
+                        <div class="cell-main">{{ getItemDisplay(item).primary }}</div>
+                        <div class="cell-sub">{{ getItemDisplay(item).secondary }}</div>
+                      </div>
+                    </td>
                     
                     <td :class="{ 'neg-stock': item.current_stock < 0 }">
                       {{ item.current_stock }}
@@ -153,9 +237,8 @@ const doExecute = async () => {
       <template #footer>
         <div class="footer">
           <n-button @click="emit('update:show', false)">取消</n-button>
-          
           <n-button type="success" size="large" @click="preCheckAndExecute">
-            🚀 确认并扣减库存
+            确认并扣减
           </n-button>
         </div>
       </template>
@@ -166,25 +249,45 @@ const doExecute = async () => {
 <style scoped>
 .run-modal { width: 650px; background-color: #1c1c1e; border-radius: 16px; }
 
-.control-panel {
-  display: flex; align-items: center; justify-content: center; gap: 16px;
-  padding: 30px 0; background: rgba(255,255,255,0.03); border-radius: 12px; margin-bottom: 20px;
+.control-container {
+  background: rgba(255,255,255,0.03); 
+  border-radius: 12px; 
+  padding: 24px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
-.label { font-size: 18px; font-weight: bold; color: #fff; }
-.multiplier-input { width: 150px; text-align: center; }
+
+.control-panel { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.input-group { display: flex; align-items: center; gap: 12px; }
+.label { font-size: 16px; font-weight: 500; color: #fff; }
+.multiplier-input { width: 140px; text-align: center; }
+.max-btn { font-weight: 500; }
+
+.stock-info { font-size: 13px; color: #888; transition: color 0.3s; }
+.limit-info { margin-left: 6px; color: #666; }
+.stock-warning { color: #ffaa00; font-weight: 500; }
 
 .detail-panel { margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0 12px; }
 .table-container { max-height: 300px; overflow-y: auto; margin-bottom: 10px; }
 
-.sub-val { color: #888; font-size: 12px; margin-left: 4px; }
-.manual-input { width: 80px; }
+.cell-content { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; }
+.cell-main { font-weight: 600; font-size: 14px; color: #eee; }
+.cell-sub { font-size: 12px; color: #888; margin-top: 1px; }
 
-/* 样式警告 */
+.manual-input { width: 80px; }
 .neg-stock { color: #FF453A; font-weight: bold; }
 .warning-text { color: #FF453A; font-weight: 800; }
 
 .dark-table { background: transparent; }
-:deep(.n-table th), :deep(.n-table td) { background: transparent; color: #ddd; border-bottom: 1px solid rgba(255,255,255,0.1); }
+:deep(.n-table th), :deep(.n-table td) { 
+  background: transparent; 
+  color: #ddd; 
+  border-bottom: 1px solid rgba(255,255,255,0.1); 
+  vertical-align: middle;
+}
 
 .footer { display: flex; justify-content: flex-end; gap: 12px; }
 </style>

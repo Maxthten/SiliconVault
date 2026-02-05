@@ -2,8 +2,13 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { 
-  CubeOutline, RocketOutline, WarningOutline, 
-  TimeOutline, ServerOutline, SettingsOutline // 🔥 新增设置图标
+  CubeOutline, 
+  RocketOutline, 
+  WarningOutline, 
+  TimeOutline, 
+  ServerOutline, 
+  SettingsOutline,
+  StatsChartOutline // 🔥 1. 引入图表图标
 } from '@vicons/ionicons5'
 import { NIcon, NTooltip } from 'naive-ui'
 
@@ -105,6 +110,15 @@ onUnmounted(() => {
           </div>
         </template>
         <span>补货中心 {{ warningLevel === 2 ? '(急需!)' : '' }}</span>
+      </n-tooltip>
+
+      <n-tooltip trigger="hover" placement="right">
+        <template #trigger>
+          <div class="nav-item" :class="{ active: route.path === '/consumption' }" @click="navigateTo('/consumption')">
+            <n-icon size="24" :component="StatsChartOutline" />
+          </div>
+        </template>
+        消耗看板
       </n-tooltip>
 
       <n-tooltip trigger="hover" placement="right">

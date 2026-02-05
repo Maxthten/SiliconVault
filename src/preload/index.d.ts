@@ -98,6 +98,20 @@ export interface PurgeResult {
   freedSpace: number
 }
 
+// --- 消耗看板数据结构 (新增) ---
+export interface ConsumptionData {
+  summary: {
+    totalQuantity: number
+    topCategory: string
+    activeProject: string
+    intensity: 'low' | 'medium' | 'high'
+  }
+  timeline: { date: string; value: number }[]
+  categories: { name: string; value: number }[]
+  heatmap: { date: string; count: number }[]
+  ranking: { name: string; category: string; value: number }[]
+}
+
 export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
 
 export interface ImportStrategies {
@@ -136,6 +150,9 @@ declare global {
       getLogs: () => Promise<OperationLog[]>
       undoOperation: (logId: number) => Promise<void>
 
+      // --- 消耗看板统计 (新增) ---
+      getConsumptionStats: (range: 'day' | 'week' | 'month', useMock: boolean) => Promise<ConsumptionData>
+
       // --- 数据导入导出 (CSV) ---
       exportData: (payload: { title: string, filename: string, content: string }) => Promise<boolean>
       readFileText: () => Promise<string | null>
@@ -157,7 +174,7 @@ declare global {
       // 生成导入模板
       generateTemplate: (filePath: string) => Promise<{ success: boolean }>
 
-      // --- 数据维护与清理 (新增) ---
+      // --- 数据维护与清理 ---
       scanUnusedAssets: () => Promise<AssetScanResult>
       purgeUnusedAssets: (files: string[]) => Promise<PurgeResult>
       optimizeDatabase: () => Promise<{ orphansRemoved: number, vacuumed: boolean }>

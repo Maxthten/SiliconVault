@@ -28,14 +28,17 @@ const api = {
   getLogs: () => ipcRenderer.invoke('get-logs'),
   undoOperation: (logId) => ipcRenderer.invoke('undo-operation', logId),
 
-  // --- 5. 数据中心 (导入/导出) ---
+  // --- 5. 消耗看板 ---
+  getConsumptionStats: (range, useMock) => ipcRenderer.invoke('get-consumption-stats', { range, useMock }),
+
+  // --- 6. 数据中心 ---
   exportData: (payload) => ipcRenderer.invoke('export-data', payload),
   readFileText: () => ipcRenderer.invoke('read-file-text'),
   getAllInventoryExport: () => ipcRenderer.invoke('get-all-inventory-export'),
   getAllProjectsExport: () => ipcRenderer.invoke('get-all-projects-export'), 
   batchImportInventory: (items, mode) => ipcRenderer.invoke('batch-import-inventory', { items, mode }),
   
-  // 导出全量资源包 (.svdata)
+  // 导出全量资源包
   exportBundle: (options) => ipcRenderer.invoke('export-bundle', options),
 
   // 预扫描资源包
@@ -46,14 +49,15 @@ const api = {
 
   // 生成 SVData 导入模板
   generateTemplate: (filePath) => ipcRenderer.invoke('generate-template', filePath),
+  
   // 获取文件真实路径
   getFilePath: (file) => webUtils.getPathForFile(file),
 
-  // --- 6. 系统设置与资源管理 ---
+  // --- 7. 系统设置与资源管理 ---
   getStoragePath: () => ipcRenderer.invoke('get-storage-path'),
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   
-  // 打开图片/PDF (调用系统默认程序)
+  // 打开图片/PDF
   openFile: (relativePath) => ipcRenderer.invoke('open-file', relativePath),
 
   // 在资源管理器中显示并选中文件
@@ -96,17 +100,58 @@ if (process.contextIsolated) {
   // @ts-ignore (define in dts)
   window.api = api
 }
+
+// 类型导出
+export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
+
+export interface InventoryItem {
+  id?: number
+  category: string
+  name: string
+  value: string
+  package: string
+  quantity: number
+  location: string
+  min_stock?: number
+  image_paths?: string
+  datasheet_paths?: string
+}
+
+export interface BomItem {
+  inventory_id: number
+  quantity: number
+  name?: string
+  value?: string
+  package?: string
+  category?: string
+  current_stock?: number
+}
+
+export interface BomProject {
+  id?: number
+  name: string
+  description: string
+  created_at?: string
+  items?: BomItem[]
+  order_index?: number
+  files?: string
+}
+
 export interface ScanResult {
   scanId: string
-  meta: any // 或者你定义的具体类型
+  meta: {
+    version: string
+    createdAt: number
+    inventory: InventoryItem[]
+    projects: BomProject[]
+    projectItems: any[]
+  }
   conflicts: {
-    inventory: any[]
-    projects: any[]
+    inventory: Array<{ local: InventoryItem, remote: InventoryItem, hasFileDiff?: boolean }>
+    projects: Array<{ local: BomProject, remote: BomProject, hasFileDiff?: boolean }>
   }
   newItems: {
     inventory: number
     projects: number
   }
 }
-
-export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'

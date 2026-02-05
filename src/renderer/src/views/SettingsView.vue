@@ -22,7 +22,7 @@ const APP_CONFIG = {
   avatarUrl: localAvatar,
   links: {
     blog: 'https://zh.maxtonniu.com/',
-    github: 'https://github.com/',
+    github: 'https://github.com/Maxthten/SiliconVault',
   },
   sponsor: {
     enable: false,
