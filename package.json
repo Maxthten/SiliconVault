@@ -26,7 +26,6 @@
     "@vicons/ionicons5": "^0.13.0",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
-    "charts": "^0.0.3",
     "echarts": "^6.0.0",
     "electron-store": "^8.1.0",
     "naive-ui": "^2.43.2",
