@@ -56,6 +56,76 @@ class BackupManager {
     }
   }
 
+  public async createAutoBackup(targetDir: string): Promise<boolean> {
+    try {
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true })
+      }
+
+      const now = new Date()
+      const formatNum = (n: number) => n.toString().padStart(2, '0')
+      const timestamp = `${now.getFullYear()}${formatNum(now.getMonth() + 1)}${formatNum(now.getDate())}_${formatNum(now.getHours())}${formatNum(now.getMinutes())}${formatNum(now.getSeconds())}`
+      
+      const fileName = `AutoBackup_${timestamp}.svdata`
+      const filePath = path.join(targetDir, fileName)
+
+      // 复用现有的全量导出逻辑
+      await this.exportBundle(filePath, { type: 'all' })
+      
+      return true
+    } catch (e) {
+      console.error('自动备份执行失败:', e)
+      return false
+    }
+  }
+
+  public async cleanOldBackups(targetDir: string, maxBackups: number) {
+    if (!fs.existsSync(targetDir) || maxBackups <= 0) return
+
+    try {
+      const files = fs.readdirSync(targetDir)
+      
+      // 筛选出符合 AutoBackup_*.svdata 格式的文件
+      const backupFiles = files
+        .filter(f => /^AutoBackup_\d{8}_\d{6}\.svdata$/.test(f))
+        .map(f => {
+          const fullPath = path.join(targetDir, f)
+          try {
+            return {
+              name: f,
+              path: fullPath,
+              time: fs.statSync(fullPath).birthtime.getTime()
+            }
+          } catch {
+            return null
+          }
+        })
+        .filter(f => f !== null) as { name: string, path: string, time: number }[]
+
+      // 按时间倒序排列 (最新的在前)
+      backupFiles.sort((a, b) => b.time - a.time)
+
+      if (backupFiles.length > maxBackups) {
+        const filesToDelete = backupFiles.slice(maxBackups)
+        
+        for (const file of filesToDelete) {
+          fs.unlinkSync(file.path)
+          
+          // 尝试清理伴生的CSV文件（如果存在）
+          const csvPath = file.path.replace(/\.svdata$/, '.csv')
+          if (fs.existsSync(csvPath)) {
+            fs.unlinkSync(csvPath)
+          }
+        }
+        
+        console.log(`已清理 ${filesToDelete.length} 个过期自动备份文件`)
+      }
+
+    } catch (e) {
+      console.error('清理旧备份失败:', e)
+    }
+  }
+
   public async exportBundle(filePath: string, options: ExportOptions) {
     try {
       const zip = new AdmZip()

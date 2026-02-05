@@ -84,7 +84,11 @@ const api = {
   // 数据库优化
   optimizeDatabase: () => ipcRenderer.invoke('optimize-database'),
 
-  getAppVersion: () => ipcRenderer.invoke('get-app-version')
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
+  // --- 8. 自动备份设置 ---
+  getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
+  saveAppSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings)
 }
 
 if (process.contextIsolated) {
@@ -154,4 +158,11 @@ export interface ScanResult {
     inventory: number
     projects: number
   }
+}
+
+export interface AppSettings {
+  autoBackup: boolean
+  backupFrequency: 'exit' | '30min' | '1h' | '4h'
+  backupPath: string
+  maxBackups: number
 }

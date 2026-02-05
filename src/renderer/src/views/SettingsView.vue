@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { 
-  NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NSpace, NAvatar, NDivider, NCard, NStatistic
+  NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NSpace, NAvatar, NDivider, NCard, NStatistic,
+  NSwitch, NSelect, NInputNumber, NCollapseTransition
 } from 'naive-ui'
 import { 
   FolderOpenOutline, ArrowForwardCircleOutline, 
   SaveOutline, InformationCircleOutline,
   LogoGithub, HeartOutline, CodeSlashOutline, BookOutline,
-  ConstructOutline, TrashBinOutline, LeafOutline, ScanOutline
+  ConstructOutline, TrashBinOutline, LeafOutline, ScanOutline,
+  CloudUploadOutline, TimeOutline
 } from '@vicons/ionicons5'
 
 import localAvatar from '@renderer/assets/icon.png'
@@ -40,6 +42,21 @@ const displayVersion = ref('Loading...')
 const isMigrating = ref(false)
 const showConfirm = ref(false)
 
+// 备份设置状态
+const backupSettings = ref({
+  autoBackup: false,
+  backupFrequency: 'exit',
+  backupPath: '',
+  maxBackups: 5
+})
+
+const frequencyOptions = [
+  { label: '仅在应用退出时', value: 'exit' },
+  { label: '每 30 分钟', value: '30min' },
+  { label: '每 1 小时', value: '1h' },
+  { label: '每 4 小时', value: '4h' }
+]
+
 // 数据维护状态
 const scanResult = ref<any>(null)
 const isScanning = ref(false)
@@ -63,6 +80,12 @@ const init = async () => {
     currentPath.value = path
     newPath.value = path 
 
+    // 加载备份设置
+    const settings = await window.api.getAppSettings()
+    if (settings) {
+      backupSettings.value = settings
+    }
+
     if (APP_CONFIG.autoVersion) {
       const ver = await window.api.getAppVersion()
       displayVersion.value = `Version ${ver} (Beta)`
@@ -71,6 +94,23 @@ const init = async () => {
     }
   } catch (e) {
     message.error('初始化信息失败')
+  }
+}
+
+// 自动保存备份设置
+watch(backupSettings, async (newVal) => {
+  try {
+    await window.api.saveAppSettings(JSON.parse(JSON.stringify(newVal)))
+  } catch (e) {
+    console.error('保存设置失败', e)
+  }
+}, { deep: true })
+
+// 选择备份文件夹
+const handleSelectBackupFolder = async () => {
+  const path = await window.api.selectFolder()
+  if (path) {
+    backupSettings.value.backupPath = path
   }
 }
 
@@ -132,7 +172,6 @@ const handleScan = async () => {
     showScanModal.value = true
   } catch (e:any) {
     console.error('扫描详细错误:', e) 
-    // 如果是 Electron 抛出的错误，通常错误信息在 e.message
     message.error(`扫描失败: ${e.message || '未知错误'}`)
   } finally {
     isScanning.value = false
@@ -165,7 +204,7 @@ const handleOptimize = async () => {
     const res = await window.api.optimizeDatabase()
     message.success(`优化完成：清理了 ${res.orphansRemoved} 条孤立数据，并重组了数据库结构`)
   } catch (e:any) {
-    console.error('优化详细错误:', e) // ✅ 关键
+    console.error('优化详细错误:', e) 
     message.error(`数据库优化失败: ${e.message}`)
   } finally {
     isOptimizing.value = false
@@ -234,6 +273,74 @@ onMounted(init)
             开始迁移并重启软件
           </n-button>
         </div>
+      </div>
+    </div>
+
+    <div class="section" style="margin-top: 40px;">
+      <div class="section-title">
+        <n-icon :component="CloudUploadOutline" />
+        <span>自动备份策略</span>
+      </div>
+
+      <div class="backup-panel">
+        <div class="backup-header">
+          <div class="backup-info">
+            <div class="b-title">启用自动备份</div>
+            <div class="b-desc">根据预设频率自动打包全量数据，防止意外丢失。</div>
+          </div>
+          <n-switch v-model:value="backupSettings.autoBackup" size="large">
+            <template #checked>开启</template>
+            <template #unchecked>关闭</template>
+          </n-switch>
+        </div>
+
+        <n-collapse-transition :show="backupSettings.autoBackup">
+          <div class="backup-body">
+            <n-divider style="margin: 10px 0 20px 0; opacity: 0.1;" />
+            
+            <div class="form-grid">
+              <div class="form-item">
+                <div class="label">备份频率</div>
+                <n-select 
+                  v-model:value="backupSettings.backupFrequency" 
+                  :options="frequencyOptions" 
+                  placeholder="选择频率"
+                />
+                <div class="sub-label" style="margin-top: 5px; font-size: 12px; color: #666;">
+                  <n-icon :component="TimeOutline" style="vertical-align: middle; margin-right: 4px;" />
+                  仅在数据发生变更时触发
+                </div>
+              </div>
+
+              <div class="form-item">
+                <div class="label">保留份数</div>
+                <n-input-number 
+                  v-model:value="backupSettings.maxBackups" 
+                  :min="1" 
+                  :max="50"
+                  button-placement="both"
+                />
+                <div class="sub-label" style="margin-top: 5px; font-size: 12px; color: #666;">
+                  滚动删除旧备份，节省空间
+                </div>
+              </div>
+
+              <div class="form-item full-width">
+                <div class="label">备份存储位置</div>
+                <n-input-group>
+                  <n-input 
+                    v-model:value="backupSettings.backupPath" 
+                    readonly 
+                    placeholder="选择备份存放目录..." 
+                  />
+                  <n-button @click="handleSelectBackupFolder">
+                    <template #icon><n-icon :component="FolderOpenOutline" /></template>
+                  </n-button>
+                </n-input-group>
+              </div>
+            </div>
+          </div>
+        </n-collapse-transition>
       </div>
     </div>
 
@@ -458,6 +565,33 @@ onMounted(init)
   margin-top: 15px;
 }
 .migrate-btn-wrapper.visible { max-height: 60px; opacity: 1; }
+
+/* 备份面板样式 */
+.backup-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 25px;
+  transition: all 0.3s;
+}
+.backup-panel:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.backup-header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.b-title { font-weight: bold; font-size: 15px; margin-bottom: 5px; }
+.b-desc { font-size: 13px; color: #888; }
+.backup-body { padding-top: 10px; }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.form-item { display: flex; flex-direction: column; gap: 8px; }
+.form-item.full-width { grid-column: span 2; }
+.label { font-size: 13px; color: #ccc; font-weight: 500; }
 
 /* 维护卡片网格 */
 .maintenance-grid {

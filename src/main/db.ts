@@ -67,6 +67,13 @@ export interface OperationLog {
   created_at?: string
 }
 
+export interface AppSettings {
+  autoBackup: boolean
+  backupFrequency: 'exit' | '30min' | '1h' | '4h'
+  backupPath: string
+  maxBackups: number
+}
+
 const DEFAULT_CATEGORIES = [
   "电阻", "电容", "电感", "二极管", "三极管", 
   "芯片(IC)", "连接器", "模块", "开关/按键", "其他"
@@ -177,6 +184,13 @@ class DBManager {
       CREATE TABLE IF NOT EXISTS sort_orders (
         table_name TEXT PRIMARY KEY,
         id_order TEXT 
+      )
+    `)
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
       )
     `)
   }
@@ -695,6 +709,43 @@ class DBManager {
     })
 
     return tx()
+  }
+
+  // --- App Settings Methods ---
+
+  private getSetting(key: string, defaultValue: any): any {
+    try {
+      const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as any
+      if (row) return JSON.parse(row.value)
+      return defaultValue
+    } catch {
+      return defaultValue
+    }
+  }
+
+  private setSetting(key: string, value: any) {
+    this.db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)").run(key, JSON.stringify(value))
+  }
+
+  public getAppSettings(): AppSettings {
+    const defaultBackupPath = path.join(app.getPath('documents'), 'SiliconVault', 'Backups')
+    
+    return {
+      autoBackup: this.getSetting('autoBackup', false),
+      backupFrequency: this.getSetting('backupFrequency', 'exit'),
+      backupPath: this.getSetting('backupPath', defaultBackupPath),
+      maxBackups: this.getSetting('maxBackups', 5)
+    }
+  }
+
+  public saveAppSettings(settings: AppSettings) {
+    const tx = this.db.transaction(() => {
+      this.setSetting('autoBackup', settings.autoBackup)
+      this.setSetting('backupFrequency', settings.backupFrequency)
+      this.setSetting('backupPath', settings.backupPath)
+      this.setSetting('maxBackups', settings.maxBackups)
+    })
+    tx()
   }
 }
 

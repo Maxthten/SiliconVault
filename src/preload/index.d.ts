@@ -58,6 +58,14 @@ export interface CategoryRule {
   packageLabel: string
 }
 
+// 自动备份设置 (新增)
+export interface AppSettings {
+  autoBackup: boolean
+  backupFrequency: 'exit' | '30min' | '1h' | '4h'
+  backupPath: string
+  maxBackups: number
+}
+
 // 资源包导入扫描结果
 export interface ScanResult {
   scanId: string
@@ -98,7 +106,7 @@ export interface PurgeResult {
   freedSpace: number
 }
 
-// --- 消耗看板数据结构 (新增) ---
+// --- 消耗看板数据结构 ---
 export interface ConsumptionData {
   summary: {
     totalQuantity: number
@@ -150,7 +158,7 @@ declare global {
       getLogs: () => Promise<OperationLog[]>
       undoOperation: (logId: number) => Promise<void>
 
-      // --- 消耗看板统计 (新增) ---
+      // --- 消耗看板统计 ---
       getConsumptionStats: (range: 'day' | 'week' | 'month', useMock: boolean) => Promise<ConsumptionData>
 
       // --- 数据导入导出 (CSV) ---
@@ -199,6 +207,10 @@ declare global {
       
       // 获取文件真实路径
       getFilePath: (file: File) => string
+
+      // --- 自动备份设置 (新增) ---
+      getAppSettings: () => Promise<AppSettings>
+      saveAppSettings: (settings: AppSettings) => Promise<void>
     }
   }
 }

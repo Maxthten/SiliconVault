@@ -12,6 +12,10 @@ import { analyticsManager } from './analytics'
 
 const store = new Store()
 
+// 自动备份相关的状态变量
+let isDataDirty = false // 脏标记：数据是否发生了变更
+let backupTimer: NodeJS.Timeout | null = null
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-resource',
@@ -54,8 +58,61 @@ function createWindow(): void {
   }
 }
 
+// --- 自动备份逻辑 ---
+
+function markDataDirty() {
+  isDataDirty = true
+}
+
+async function performAutoBackup(reason: string) {
+  const settings = dbManager.getAppSettings()
+  if (!settings.autoBackup) return
+
+  // 如果是因为定时器触发，且数据没变过，则跳过备份
+  if (reason === 'timer' && !isDataDirty) return
+
+  // 如果是因为退出触发，且数据没变过，也跳过 (可选，看个人偏好，这里选择跳过以节省空间)
+  if (reason === 'exit' && !isDataDirty) return
+
+  try {
+    const success = await backupManager.createAutoBackup(settings.backupPath)
+    if (success) {
+      console.log(`[AutoBackup] 备份成功 (${reason})`)
+      isDataDirty = false // 重置脏标记
+      
+      // 执行清理策略
+      await backupManager.cleanOldBackups(settings.backupPath, settings.maxBackups)
+    }
+  } catch (e) {
+    console.error(`[AutoBackup] 备份失败 (${reason}):`, e)
+  }
+}
+
+function scheduleBackupTimer() {
+  if (backupTimer) clearInterval(backupTimer)
+  
+  const settings = dbManager.getAppSettings()
+  if (!settings.autoBackup || settings.backupFrequency === 'exit') return
+
+  let intervalMs = 0
+  switch (settings.backupFrequency) {
+    case '30min': intervalMs = 30 * 60 * 1000; break;
+    case '1h': intervalMs = 60 * 60 * 1000; break;
+    case '4h': intervalMs = 4 * 60 * 60 * 1000; break;
+  }
+
+  if (intervalMs > 0) {
+    backupTimer = setInterval(() => {
+      performAutoBackup('timer')
+    }, intervalMs)
+  }
+}
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.maxtonniu.siliconvaultn')
+
+  // 初始化定时器
+  scheduleBackupTimer()
 
   protocol.handle('local-resource', (request) => {
     const url = request.url.replace('local-resource://', '')
@@ -83,16 +140,40 @@ app.whenReady().then(() => {
   ipcMain.handle('get-categories', () => dbManager.fetchCategories())
   ipcMain.handle('get-packages', (_, category) => dbManager.fetchPackages(category))
   ipcMain.handle('get-inventory', (_, filters) => dbManager.fetchGrouped(filters))
-  ipcMain.handle('update-qty', (_, { id, qty }) => dbManager.updateQty(id, qty))
-  ipcMain.handle('delete-item', (_, id) => dbManager.deleteItem(id))
-  ipcMain.handle('upsert-item', (_, data) => dbManager.upsert(data))
+  
+  ipcMain.handle('update-qty', (_, { id, qty }) => {
+    dbManager.updateQty(id, qty)
+    markDataDirty()
+  })
+  
+  ipcMain.handle('delete-item', (_, id) => {
+    dbManager.deleteItem(id)
+    markDataDirty()
+  })
+  
+  ipcMain.handle('upsert-item', (_, data) => {
+    dbManager.upsert(data)
+    markDataDirty()
+  })
 
   // --- BOM 项目管理 ---
   ipcMain.handle('get-projects', (_, query) => dbManager.getProjects(query))
   ipcMain.handle('get-project-detail', (_, id) => dbManager.getProjectDetail(id))
-  ipcMain.handle('save-project', (_, project) => dbManager.saveProject(project))
-  ipcMain.handle('delete-project', (_, id) => dbManager.deleteProject(id))
-  ipcMain.handle('execute-deduction', (_, items) => dbManager.executeDeduction(items))
+  
+  ipcMain.handle('save-project', (_, project) => {
+    dbManager.saveProject(project)
+    markDataDirty()
+  })
+  
+  ipcMain.handle('delete-project', (_, id) => {
+    dbManager.deleteProject(id)
+    markDataDirty()
+  })
+  
+  ipcMain.handle('execute-deduction', (_, items) => {
+    dbManager.executeDeduction(items)
+    markDataDirty()
+  })
 
   // --- 规则与排序 ---
   ipcMain.handle('get-category-rule', (_, cat) => dbManager.getCategoryRule(cat))
@@ -102,7 +183,11 @@ app.whenReady().then(() => {
 
   // --- 日志 ---
   ipcMain.handle('get-logs', () => dbManager.getLogs())
-  ipcMain.handle('undo-operation', (_, logId) => dbManager.undoOperation(logId))
+  
+  ipcMain.handle('undo-operation', (_, logId) => {
+    dbManager.undoOperation(logId)
+    markDataDirty()
+  })
 
   // --- CSV 导出 ---
   ipcMain.handle('export-data', async (_, { title, content, filename }) => {
@@ -138,7 +223,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-all-inventory-export', () => dbManager.getAllInventoryForExport())
   ipcMain.handle('get-all-projects-export', () => dbManager.getAllProjectsForExport())
-  ipcMain.handle('batch-import-inventory', (_, { items, mode }) => dbManager.batchImportInventory(items, mode))
+  
+  ipcMain.handle('batch-import-inventory', (_, { items, mode }) => {
+    const result = dbManager.batchImportInventory(items, mode)
+    markDataDirty()
+    return result
+  })
 
   // --- 系统与路径 ---
   ipcMain.handle('get-storage-path', () => dbManager.getStoragePath())
@@ -259,12 +349,24 @@ app.whenReady().then(() => {
 
   ipcMain.handle('execute-import-bundle', async (_, { scanId, strategies }) => {
     try {
-      return await backupManager.executeImport(scanId, strategies)
+      const result = await backupManager.executeImport(scanId, strategies)
+      markDataDirty()
+      return result
     } catch (e) {
       console.error('导入执行失败', e)
       throw e
     }
   })
+
+  // --- 自动备份设置 ---
+  
+  ipcMain.handle('get-app-settings', () => dbManager.getAppSettings())
+  
+  ipcMain.handle('save-app-settings', (_, settings) => {
+    dbManager.saveAppSettings(settings)
+    scheduleBackupTimer() // 设置改变后，重置定时器
+  })
+
   // --- 消耗统计看板 ---
   ipcMain.handle('get-consumption-stats', (_, { range, useMock }) => {
     return analyticsManager.getConsumptionStats(range, useMock)
@@ -288,6 +390,27 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// 处理应用退出前的逻辑，特别是自动备份
+app.on('before-quit', async (event) => {
+  const settings = dbManager.getAppSettings()
+  
+  // 如果开启了自动备份，并且处于需要备份的状态
+  if (settings.autoBackup && isDataDirty) {
+    // 阻止立即退出，给予备份时间
+    event.preventDefault()
+    
+    console.log('[AutoBackup] 正在执行退出备份...')
+    
+    // 执行备份
+    await performAutoBackup('exit')
+    
+    console.log('[AutoBackup] 退出备份完成，正在关闭应用。')
+    
+    // 强制退出
+    app.exit(0)
+  }
 })
 
 app.on('window-all-closed', () => {
