@@ -2,38 +2,34 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { 
   Search, Add, CreateOutline, CheckmarkOutline, 
-  ChevronDown, ChevronForward, SettingsOutline,
-  FlashOutline // 🔥 新增：批量操作图标
+  ChevronDown, ChevronForward, SettingsOutline, FlashOutline
 } from '@vicons/ionicons5'
 import { NInput, NButton, NIcon, NSpin, NSelect, useMessage, useDialog } from 'naive-ui'
 import { VueDraggable } from 'vue-draggable-plus'
 import InventoryCard from '../components/InventoryCard.vue'
 import EditDialog from '../components/EditDialog.vue'
-import BatchEditModal from '../components/BatchEditModal.vue' // 🔥 新增组件
+import BatchEditModal from '../components/BatchEditModal.vue'
 
-// 状态定义
 const searchQuery = ref('')
 const filterCategory = ref<string | null>(null)
 const filterPackage = ref<string | null>(null)
 const categoryOptions = ref<any[]>([])
 const packageOptions = ref<any[]>([])
+const categoryRules = ref<Record<string, any>>({})
 
 const isEditMode = ref(false)
 const isLoading = ref(false)
 const isDragging = ref(false)
 
-// 结构: [{ name: '电阻', collapsed: false, items: [...] }, ...]
 const sortedGroups = ref<{ name: string, collapsed: boolean, items: any[] }[]>([])
 
-// 弹窗状态
 const showModal = ref(false)
-const showBatchModal = ref(false) // 🔥 批量弹窗状态
+const showBatchModal = ref(false)
 const currentEditItem = ref<any>(null)
 
 const message = useMessage()
 const dialog = useDialog()
 
-// 计算属性：将分组数据拍平，传给批量操作弹窗
 const allFlatItems = computed(() => {
   const flat = [] as any[]
   sortedGroups.value.forEach(group => {
@@ -42,7 +38,20 @@ const allFlatItems = computed(() => {
   return flat
 })
 
-// 加载选项
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error('加载规则失败', e) }
+}
+
 const loadPackages = async () => {
   try {
     const pkgs = await window.api.fetchPackages(filterCategory.value || undefined)
@@ -58,10 +67,11 @@ const loadOptions = async () => {
   } catch (e) { console.error(e) }
 }
 
-// 加载数据
 const loadData = async () => {
   isLoading.value = true
   try {
+    await loadRules()
+
     const data = await window.api.fetchInventory({
       keyword: searchQuery.value,
       category: filterCategory.value || undefined,
@@ -86,7 +96,6 @@ const loadData = async () => {
 watch(filterCategory, () => { loadPackages(); filterPackage.value = null; loadData() })
 watch([searchQuery, filterPackage], () => { loadData() })
 
-// 拖拽逻辑...
 const onDragStart = () => {
   isDragging.value = true
   if (navigator.vibrate) navigator.vibrate(30)
@@ -105,7 +114,6 @@ const onItemDragEnd = async (evt: any) => {
 }
 const onCategoryDragEnd = () => { isDragging.value = false }
 
-// 业务逻辑
 const handleQtyUpdate = async (item: any, delta: number) => {
   const newQty = item.quantity + delta
   if (delta < 0 && newQty < 0) return
@@ -126,8 +134,6 @@ const handleDelete = (id: number) => {
         loadData()
         loadOptions()
       } catch (e: any) {
-        // 后端已经把项目名字拼好了，直接判断是否包含关键词，然后显示 e.message
-        // 这里的关键词匹配是为了防止显示无关的系统报错
         if (e.message && e.message.includes('无法删除')) {
           dialog.error({
             title: '占用警告',
@@ -239,6 +245,7 @@ onMounted(() => { loadOptions(); loadData() })
                   <InventoryCard 
                     :item="item" 
                     :is-edit-mode="isEditMode"
+                    :display-rule="categoryRules[item.category]" 
                     @update-qty="(delta) => handleQtyUpdate(item, delta)"
                     @delete="handleDelete(item.id)"
                     @edit="handleEdit(item)"
@@ -265,7 +272,6 @@ onMounted(() => { loadOptions(); loadData() })
 <style scoped>
 .inventory-page { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-/* Toolbar */
 .toolbar {
   padding: 12px 16px; display: flex; gap: 12px; align-items: center;
   position: sticky; top: 0; z-index: 100;
@@ -281,11 +287,9 @@ onMounted(() => { loadOptions(); loadData() })
   background-color: rgba(118, 118, 128, 0.24) !important; border: none !important; border-radius: 8px !important;
 }
 
-/* List */
 .list-container { flex: 1; overflow-y: auto; padding: 20px; }
 .empty-state { text-align: center; color: #666; margin-top: 80px; }
 
-/* Category */
 .category-group { margin-bottom: 24px; }
 .cat-header {
   display: flex; justify-content: space-between; align-items: center;
@@ -297,7 +301,6 @@ onMounted(() => { loadOptions(); loadData() })
 .cat-info { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: #fff; }
 .cat-count { font-size: 14px; color: #666; font-weight: normal; }
 
-/* Grid Layout */
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
@@ -305,7 +308,6 @@ onMounted(() => { loadOptions(); loadData() })
 }
 @media (max-width: 768px) { .card-grid { grid-template-columns: 1fr; } }
 
-/* Animations */
 .card-wrapper { position: relative; transition: transform 0.2s; }
 @keyframes jiggle { 0% { transform: rotate(0deg); } 25% { transform: rotate(-0.8deg); } 75% { transform: rotate(0.8deg); } 100% { transform: rotate(0deg); } }
 .is-shaking { animation: jiggle 0.28s infinite ease-in-out; }

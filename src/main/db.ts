@@ -48,12 +48,22 @@ export interface FilterOptions {
   package?: string
 }
 
+// 定义 2x2 插槽布局结构
+export interface CategoryLayout {
+  topLeft: string      // 左上 (核心大字)
+  topRight: string     // 右上 (标签/胶囊)
+  bottomLeft: string   // 左下 (辅助信息)
+  bottomRight: string  // 右下 (图标信息)
+}
+
 export interface CategoryRule {
   nameLabel: string
   namePlaceholder: string
   valueLabel: string
   valuePlaceholder: string
   packageLabel: string
+  // 布局配置，不再是数组，而是明确的插槽映射
+  layout?: CategoryLayout 
 }
 
 export interface OperationLog {
@@ -80,18 +90,49 @@ const DEFAULT_CATEGORIES = [
 ]
 
 const SYSTEM_DEFAULTS: Record<string, CategoryRule> = {
-  '电阻': { nameLabel: '精度/功率', namePlaceholder: '选填 (如 1%)', valueLabel: '阻值', valuePlaceholder: '必填 (如 10k)', packageLabel: '封装' },
-  '电容': { nameLabel: '耐压/材质', namePlaceholder: '选填 (如 50V)', valueLabel: '容值', valuePlaceholder: '必填 (如 100nF)', packageLabel: '封装' },
-  '电感': { nameLabel: '电流/参数', namePlaceholder: '选填 (如 1A)', valueLabel: '感值', valuePlaceholder: '必填 (如 10uH)', packageLabel: '封装' },
-  '芯片(IC)': { nameLabel: '完整型号', namePlaceholder: '必填 (如 STM32F103)', valueLabel: '核心描述', valuePlaceholder: '选填 (如 MCU)', packageLabel: '封装' },
-  '二极管': { nameLabel: '参数', namePlaceholder: '如 75V', valueLabel: '型号', valuePlaceholder: '如 1N4148', packageLabel: '封装' },
-  '三极管': { nameLabel: '参数', namePlaceholder: '如 NPN', valueLabel: '型号', valuePlaceholder: '如 S8050', packageLabel: '封装' }
+  '电阻': { 
+    nameLabel: '精度/功率', namePlaceholder: '选填 (如 1%)', 
+    valueLabel: '阻值', valuePlaceholder: '必填 (如 10k)', 
+    packageLabel: '封装',
+    layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  },
+  '电容': { 
+    nameLabel: '耐压/材质', namePlaceholder: '选填 (如 50V)', 
+    valueLabel: '容值', valuePlaceholder: '必填 (如 100nF)', 
+    packageLabel: '封装',
+    layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  },
+  '电感': { 
+    nameLabel: '电流/参数', namePlaceholder: '选填 (如 1A)', 
+    valueLabel: '感值', valuePlaceholder: '必填 (如 10uH)', 
+    packageLabel: '封装',
+    layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  },
+  '芯片(IC)': { 
+    nameLabel: '完整型号', namePlaceholder: '必填 (如 STM32F103)', 
+    valueLabel: '核心描述', valuePlaceholder: '选填 (如 MCU)', 
+    packageLabel: '封装',
+    layout: { topLeft: 'name', topRight: 'package', bottomLeft: 'value', bottomRight: 'location' }
+  },
+  '二极管': { 
+    nameLabel: '参数', namePlaceholder: '如 75V', 
+    valueLabel: '型号', valuePlaceholder: '如 1N4148', 
+    packageLabel: '封装',
+    layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  },
+  '三极管': { 
+    nameLabel: '参数', namePlaceholder: '如 NPN', 
+    valueLabel: '型号', valuePlaceholder: '如 S8050', 
+    packageLabel: '封装',
+    layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  }
 }
 
 const GENERIC_RULE: CategoryRule = {
   nameLabel: '型号/名称', namePlaceholder: '必填',
   valueLabel: '参数/数值', valuePlaceholder: '选填',
-  packageLabel: '封装'
+  packageLabel: '封装',
+  layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
 }
 
 class DBManager {
@@ -390,10 +431,8 @@ class DBManager {
 
   public deleteItem(id: number) {
     try {
-      // 尝试直接删除
       this.db.prepare('DELETE FROM inventory WHERE id = ?').run(id)
     } catch (error: any) {
-      // 捕捉外键约束错误 (即：被占用了)
       if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
         const projects = this.db.prepare(`
           SELECT p.name 
@@ -402,14 +441,9 @@ class DBManager {
           WHERE pi.inventory_id = ?
         `).all(id) as { name: string }[]
 
-        // 提取名字并拼接，例如："智能小车", "机械臂"
         const names = projects.map(p => `"${p.name}"`).join(', ')
-        
-        // 抛出带有具体名单的错误信息
         throw new Error(`无法删除：该元件正在被以下项目使用：\n${names}\n请先在这些项目中移除该元件。`)
       }
-      
-      // 其他错误照常抛出
       throw error
     }
   }

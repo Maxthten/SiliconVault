@@ -17,9 +17,6 @@ const props = defineProps<{
 const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
 
-// 🟢 被动器件分类（这些分类优先显示 Value）
-const PASSIVE_CATS = ['电阻', '电容', '电感', '二极管', '保险丝', '跳线']
-
 // 表单信息
 const form = ref({
   id: undefined as number | undefined,
@@ -28,12 +25,12 @@ const form = ref({
 })
 
 const bomList = ref<any[]>([])
-const fileList = ref<string[]>([]) // 附件列表
+const fileList = ref<string[]>([]) 
 
 // 状态控制
 const isUploading = ref(false)
 const isDragOver = ref(false)
-const showUploadArea = ref(false) // 控制上传区折叠
+const showUploadArea = ref(false)
 
 // 左侧筛选状态
 const sourceSearch = ref('')
@@ -44,6 +41,8 @@ const sourceList = ref<any[]>([])
 // 选项列表
 const categoryOptions = ref<any[]>([])
 const packageOptions = ref<any[]>([])
+// 存储分类规则
+const categoryRules = ref<Record<string, any>>({})
 
 // --- 初始化与加载 ---
 
@@ -61,20 +60,33 @@ const loadPackages = async () => {
   } catch (e) { console.error(e) }
 }
 
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error(e) }
+}
+
 watch(() => props.show, async (val) => {
   if (val) {
     await loadCategories()
     await loadPackages()
+    await loadRules()
 
     if (props.projectData) {
       form.value = { ...props.projectData }
       
-      // 加载 BOM 清单
       try {
         bomList.value = await window.api.getProjectDetail(props.projectData.id)
       } catch (e) { bomList.value = [] }
 
-      // 加载附件
       try {
         const filesRaw = props.projectData.files
         fileList.value = filesRaw ? JSON.parse(filesRaw) : []
@@ -86,7 +98,6 @@ watch(() => props.show, async (val) => {
       fileList.value = []
     }
     
-    // 重置状态
     sourceSearch.value = ''
     filterCategory.value = null
     filterPackage.value = null
@@ -94,6 +105,32 @@ watch(() => props.show, async (val) => {
     searchInventory()
   }
 })
+
+// --- 动态显示逻辑 ---
+
+const getItemDisplay = (item: any) => {
+  const rule = categoryRules.value[item.category]
+  const rawLayout = rule?.layout
+
+  let layout = { tl: 'value', tr: 'package', bl: 'name' }
+
+  if (rawLayout && !Array.isArray(rawLayout) && typeof rawLayout === 'object') {
+    layout = {
+      tl: rawLayout.topLeft !== undefined ? rawLayout.topLeft : 'value',
+      tr: rawLayout.topRight !== undefined ? rawLayout.topRight : 'package',
+      bl: rawLayout.bottomLeft !== undefined ? rawLayout.bottomLeft : 'name'
+    }
+  } else if (Array.isArray(rawLayout)) {
+    layout = { tl: rawLayout[0] || 'value', tr: 'package', bl: rawLayout[1] || 'name' }
+  }
+
+  return {
+    tl: item[layout.tl] || '',
+    tr: item[layout.tr] || '',
+    trKey: layout.tr,
+    bl: item[layout.bl] || ''
+  }
+}
 
 // --- 库存搜索 ---
 
@@ -165,7 +202,6 @@ const processFiles = async (files: File[]) => {
   if (isUploading.value) return
   isUploading.value = true
   
-  // 使用项目名称作为分类，如果还没填名字，就用 'UnsavedProject'
   const projectCategory = form.value.name ? form.value.name.trim() : 'UnsavedProject'
   
   let count = 0
@@ -195,7 +231,6 @@ const processFiles = async (files: File[]) => {
 
 const removeFile = (index: number) => fileList.value.splice(index, 1)
 
-// 智能点击：图片预览，其他文件打开文件夹
 const handleFileClick = (path: string) => {
   const ext = path.toLowerCase().split('.').pop()
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'pdf'].includes(ext || '')) {
@@ -220,7 +255,6 @@ const handleSave = async () => {
         inventory_id: i.inventory_id,
         quantity: i.quantity
       })),
-      // 保存附件列表
       files: JSON.stringify(fileList.value)
     })
     
@@ -327,15 +361,15 @@ const handleSave = async () => {
             <div class="list-wrapper">
               <div v-for="item in sourceList" :key="item.id" class="source-item" @click="addToBom(item)">
                 <div class="item-main">
-                  <div class="item-name">
-                    {{ PASSIVE_CATS.includes(item.category) ? item.value : item.name }}
-                  </div>
+                  <div class="item-name">{{ getItemDisplay(item).tl }}</div>
                   
                   <div class="item-sub">
-                    <n-tag size="tiny" :bordered="false" class="dark-tag">{{ item.package }}</n-tag>
-                    <span class="val-text">
-                      {{ PASSIVE_CATS.includes(item.category) ? item.name : item.value }}
-                    </span>
+                    <n-tag v-if="getItemDisplay(item).trKey === 'package' && getItemDisplay(item).tr" size="tiny" :bordered="false" class="dark-tag">
+                      {{ getItemDisplay(item).tr }}
+                    </n-tag>
+                    <span v-else class="sub-info">{{ getItemDisplay(item).tr }}</span>
+
+                    <span class="val-text">{{ getItemDisplay(item).bl }}</span>
                   </div>
                 </div>
                 <n-button circle size="tiny" secondary class="add-btn"><template #icon><n-icon :component="Add" /></template></n-button>
@@ -355,8 +389,11 @@ const handleSave = async () => {
               <NEmpty v-if="bomList.length === 0" description="请从左侧添加" style="margin-top: 50px" />
               <div v-for="(item, index) in bomList" :key="item.inventory_id" class="bom-item">
                 <div class="bom-info">
-                  <div class="bom-name">{{ item.name }} <span v-if="item.value" class="sub-detail">[{{ item.value }}]</span></div>
-                  <div class="bom-pkg">{{ item.package }}</div>
+                  <div class="bom-name">
+                    {{ getItemDisplay(item).tl }} 
+                    <span v-if="getItemDisplay(item).bl" class="sub-detail">[{{ getItemDisplay(item).bl }}]</span>
+                  </div>
+                  <div class="bom-pkg">{{ getItemDisplay(item).tr }}</div>
                 </div>
                 <div class="bom-ctrl">
                   <span class="x-text">×</span>
@@ -387,7 +424,7 @@ const handleSave = async () => {
 <style scoped>
 .bom-modal {
   width: 950px;
-  height: 800px; /* 稍微增高以容纳上传区 */
+  height: 800px;
   background-color: #1c1c1e;
   border-radius: 16px;
   display: flex;
@@ -407,12 +444,10 @@ const handleSave = async () => {
 
 .editor-layout { display: flex; flex-direction: column; height: 100%; gap: 16px; }
 
-/* 顶部区域 */
 .meta-area { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-shrink: 0; }
 .meta-left { flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .name-input { font-weight: bold; }
 
-/* 上传面板 */
 .upload-panel {
   background: rgba(255,255,255,0.03);
   border: 1px dashed rgba(255,255,255,0.1);
@@ -420,7 +455,7 @@ const handleSave = async () => {
   padding: 12px;
   flex-shrink: 0;
   display: flex; gap: 12px;
-  height: 100px; /* 固定高度 */
+  height: 100px; 
 }
 .drop-zone {
   width: 200px; height: 100%;
@@ -449,7 +484,6 @@ const handleSave = async () => {
 .remove-btn { position: absolute; top: 2px; right: 2px; color: #FF453A; cursor: pointer; opacity: 0; font-size: 16px; }
 .file-item:hover .remove-btn { opacity: 1; }
 
-/* 分栏区域 */
 .split-area { flex: 1; display: flex; gap: 12px; align-items: center; overflow: hidden; min-height: 0; }
 .panel {
   flex: 1; background: rgba(255, 255, 255, 0.05); border-radius: 12px;
@@ -470,7 +504,6 @@ const handleSave = async () => {
 
 .list-wrapper { flex: 1; overflow-y: auto; padding: 8px; }
 
-/* 列表项 */
 .source-item, .bom-item {
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; transition: all 0.2s;
@@ -481,6 +514,7 @@ const handleSave = async () => {
 .item-name { font-weight: 700; color: #fff; font-size: 15px; margin-bottom: 2px; }
 .item-sub { display: flex; gap: 6px; align-items: center; }
 .val-text { color: #888; font-size: 12px; }
+.sub-info { color: #888; font-size: 12px; }
 .dark-tag { background: rgba(255, 255, 255, 0.15); color: #ccc; }
 
 .bom-item { background: rgba(10, 132, 255, 0.1); border: 1px solid rgba(10, 132, 255, 0.2); }

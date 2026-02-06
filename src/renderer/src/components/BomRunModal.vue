@@ -13,6 +13,7 @@ const dialog = useDialog()
 
 const multiplier = ref(1)
 const deductionList = ref<any[]>([])
+const categoryRules = ref<Record<string, any>>({})
 
 // 计算库存允许的最大生产套数
 const maxBuildable = computed(() => {
@@ -44,34 +45,55 @@ const shortageItem = computed(() => {
   return target
 })
 
-// 决定显示的 Primary 和 Secondary 信息
+// --- 动态显示逻辑 ---
+
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error(e) }
+}
+
 const getItemDisplay = (item: any) => {
-  const isPassive = /电阻|电容|电感|Resistor|Capacitor|Inductor/i.test(item.category || '') || 
-                    /电阻|电容|电感/i.test(item.name || '')
+  const rule = categoryRules.value[item.category]
+  const rawLayout = rule?.layout
 
-  const hasValue = !!item.value
+  let layout = { tl: 'value', tr: 'package', bl: 'name' }
 
-  let primary = item.name
-  let secondaryParts: string[] = []
-
-  if (isPassive && hasValue) {
-    primary = item.value
-    secondaryParts.push(item.name)
-  } else {
-    if (hasValue) secondaryParts.push(item.value)
+  if (rawLayout && !Array.isArray(rawLayout) && typeof rawLayout === 'object') {
+    layout = {
+      tl: rawLayout.topLeft !== undefined ? rawLayout.topLeft : 'value',
+      tr: rawLayout.topRight !== undefined ? rawLayout.topRight : 'package',
+      bl: rawLayout.bottomLeft !== undefined ? rawLayout.bottomLeft : 'name'
+    }
+  } else if (Array.isArray(rawLayout)) {
+    layout = { tl: rawLayout[0] || 'value', tr: 'package', bl: rawLayout[1] || 'name' }
   }
 
-  if (item.package) secondaryParts.push(item.package)
+  const primary = item[layout.tl] || ''
+  const parts: string[] = []
+  
+  if (item[layout.bl]) parts.push(item[layout.bl])
+  if (layout.tr && item[layout.tr]) parts.push(item[layout.tr])
 
   return {
     primary,
-    secondary: secondaryParts.join(' · ')
+    secondary: parts.join(' · ')
   }
 }
 
 watch(() => props.show, async (val) => {
   if (val && props.project) {
     multiplier.value = 1
+    await loadRules()
+    
     const items = await window.api.getProjectDetail(props.project.id)
     deductionList.value = items.map(i => ({
       ...i,

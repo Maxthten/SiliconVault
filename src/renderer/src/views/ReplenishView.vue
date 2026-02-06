@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch} from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { NSpin, NCollapse, NCollapseItem, NButton, NIcon, NPopover, NButtonGroup, NInputNumber, NInputGroup, useMessage } from 'naive-ui'
 import { CheckmarkCircle, NotificationsOffOutline, NotificationsOutline, MoonOutline, TimeOutline } from '@vicons/ionicons5'
 import InventoryCard from '../components/InventoryCard.vue'
@@ -7,11 +7,12 @@ import InventoryCard from '../components/InventoryCard.vue'
 const message = useMessage()
 const loading = ref(false)
 const rawList = ref<any[]>([])
+// 新增：存储分类规则
+const categoryRules = ref<Record<string, any>>({})
 
 // 暂停状态
 const isSnoozed = ref(false) 
 const snoozeInfo = ref('') 
-// 🔥 控制灵动岛弹性动画的状态
 const islandAnimating = ref(false)
 
 // 自定义暂停相关的状态
@@ -19,9 +20,27 @@ const showSnoozeMenu = ref(false)
 const snoozeMode = ref<'menu' | 'custom'>('menu') 
 const customDays = ref(3) 
 
+// 新增：加载所有分类规则 (复制自 Inventory.vue)
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error('加载规则失败', e) }
+}
+
 // 加载数据
 const loadData = async () => {
   loading.value = true
+  // 先加载规则，确保渲染正确
+  await loadRules()
+  
   await new Promise(r => setTimeout(r, 300))
   try {
     const grouped = await window.api.fetchInventory({})
@@ -33,6 +52,7 @@ const loadData = async () => {
   }
 }
 
+// ... (以下所有暂停逻辑代码保持不变，已省略以节省篇幅) ...
 // 检查暂停状态
 const checkSnooze = () => {
   if (sessionStorage.getItem('replenish_snooze')) {
@@ -127,12 +147,9 @@ watch(showSnoozeMenu, (val) => {
   if (!val) setTimeout(() => { snoozeMode.value = 'menu' }, 200)
 })
 
-// 🔥 监听暂停状态变化，触发灵动岛弹性动画
 watch(isSnoozed, () => {
   islandAnimating.value = true
-  setTimeout(() => {
-    islandAnimating.value = false
-  }, 600)
+  setTimeout(() => { islandAnimating.value = false }, 600)
 })
 
 onMounted(() => {
@@ -175,7 +192,6 @@ onMounted(() => {
                 不再提醒
               </n-button>
             </template>
-            
             <div class="snooze-container">
               <div v-if="snoozeMode === 'menu'" class="snooze-menu">
                 <div class="menu-title">暂停报警...</div>
@@ -219,22 +235,43 @@ onMounted(() => {
           </div>
 
           <div v-else class="monitor-layout state-container" key="list">
+            
             <div v-if="Object.keys(redGroups).length > 0" class="danger-zone section">
               <div class="zone-header red-header"><span>🔥 严重耗尽 (立即采购)</span></div>
               <n-collapse :default-expanded-names="Object.keys(redGroups)">
                 <n-collapse-item v-for="(items, cat) in redGroups" :key="cat" :title="cat + ` (${items.length})`" :name="cat">
-                  <div class="grid"><InventoryCard v-for="item in items" :key="item.id" :item="item" :is-edit-mode="false" read-only /></div>
+                  <div class="grid">
+                    <InventoryCard 
+                      v-for="item in items" 
+                      :key="item.id" 
+                      :item="item" 
+                      :is-edit-mode="false" 
+                      read-only 
+                      :display-rule="categoryRules[item.category]"
+                    />
+                  </div>
                 </n-collapse-item>
               </n-collapse>
             </div>
+
             <div v-if="Object.keys(yellowGroups).length > 0" class="warning-zone section">
               <div class="zone-header yellow-header"><span>⚠️ 低库存预警 (建议补充)</span></div>
               <n-collapse :default-expanded-names="Object.keys(yellowGroups)">
                 <n-collapse-item v-for="(items, cat) in yellowGroups" :key="cat" :title="cat + ` (${items.length})`" :name="cat">
-                  <div class="grid"><InventoryCard v-for="item in items" :key="item.id" :item="item" :is-edit-mode="false" read-only /></div>
+                  <div class="grid">
+                    <InventoryCard 
+                      v-for="item in items" 
+                      :key="item.id" 
+                      :item="item" 
+                      :is-edit-mode="false" 
+                      read-only 
+                      :display-rule="categoryRules[item.category]"
+                    />
+                  </div>
                 </n-collapse-item>
               </n-collapse>
             </div>
+
           </div>
           
         </Transition>
@@ -244,31 +281,23 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* ... (媒体查询和基础样式) ... */
+/* 样式与原文件保持一致，无需改动 */
 .replenish-page { padding: 30px; height: 100%; display: flex; flex-direction: column; position: relative; }
 @media (max-width: 768px) { .replenish-page { padding: 16px; } }
 .island-container { display: flex; justify-content: center; margin-bottom: 24px; }
 
-/* === 🏝️ 灵动岛样式优化 === */
 .status-island {
   display: flex; align-items: center; 
-  /* 🔥 修复：改为 center，让内容紧紧抱在一起 */
   justify-content: center; 
-  gap: 20px; /* 图标文字区 和 按钮区 之间的间距 */
-
+  gap: 20px;
   padding: 8px 16px; border-radius: 24px;
   background: #2c2c2e; border: 1px solid rgba(255,255,255,0.1);
   box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-  
-  /* 🔥 修复：移除 min-width，完全自适应内容宽度 */
-  width: fit-content; 
-  max-width: 90%;
-  
+  width: fit-content; max-width: 90%;
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: hidden;
 }
 
-/* 🔥 果冻弹性动画关键帧 */
 @keyframes jelly-bounce {
   0%   { transform: scale(1, 1); }
   30%  { transform: scale(0.95, 1.05); } 
@@ -276,46 +305,32 @@ onMounted(() => {
   70%  { transform: scale(0.98, 1.02); } 
   100% { transform: scale(1, 1); }       
 }
-.jelly-bounce {
-  animation: jelly-bounce 0.6s;
-}
+.jelly-bounce { animation: jelly-bounce 0.6s; }
 
 .island-info { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 .snooze-btn { display: flex; align-items: center; }
 
-/* 颜色变体 */
 .island-red { background: rgba(232, 128, 128, 0.15); border-color: rgba(232, 128, 128, 0.4); color: #ff8585; }
 .island-yellow { background: rgba(242, 201, 125, 0.15); border-color: rgba(242, 201, 125, 0.4); color: #f2c97d; }
 .island-green { background: rgba(99, 226, 183, 0.1); border-color: rgba(99, 226, 183, 0.3); color: #63e2b7; }
-/* 🔥 修复：休眠状态加宽一点 padding，更像胶囊 */
-.island-sleep { 
-  background: rgba(255, 255, 255, 0.05); 
-  color: #888; 
-  border-color: rgba(255,255,255,0.05); 
-  padding: 8px 24px;
-}
+.island-sleep { background: rgba(255, 255, 255, 0.05); color: #888; border-color: rgba(255,255,255,0.05); padding: 8px 24px; }
 
-/* ... (菜单样式) ... */
 .snooze-container { width: 160px; }
 .snooze-menu, .snooze-custom { padding: 8px 4px; display: flex; flex-direction: column; gap: 8px; }
 .menu-title { font-size: 12px; color: #888; margin-bottom: 2px; padding-left: 4px; }
 .back-btn { align-self: flex-start; margin-top: 4px; font-size: 12px; color: #666; }
 
-/* === 🔥 内容区过渡动画 === */
 .content { flex: 1; overflow-y: auto; padding-bottom: 40px; position: relative; }
-
 .state-container { width: 100%; height: 100%; display: flex; flex-direction: column; }
 .empty-state, .sleep-state { align-items: center; justify-content: center; height: 60vh; color: #666; gap: 20px; }
 .wake-btn { padding: 0 30px; font-weight: bold; }
 
-/* Vue Transition */
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(20px); }
 .fade-up-leave-to { opacity: 0; transform: translateY(-20px) scale(0.98); }
 .scale-enter-active, .scale-leave-active { transition: all 0.2s; }
 .scale-enter-from, .scale-leave-to { transform: scale(0); opacity: 0; }
 
-/* ... (列表样式) ... */
 .section { margin-bottom: 30px; }
 .zone-header { padding: 10px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 12px; display: inline-block; }
 .red-header { background: rgba(232, 128, 128, 0.15); color: #e88080; border: 1px solid rgba(232, 128, 128, 0.3); }

@@ -13,7 +13,7 @@ import { analyticsManager } from './analytics'
 const store = new Store()
 
 // 自动备份相关的状态变量
-let isDataDirty = false // 脏标记：数据是否发生了变更
+let isDataDirty = false
 let backupTimer: NodeJS.Timeout | null = null
 
 protocol.registerSchemesAsPrivileged([
@@ -68,19 +68,15 @@ async function performAutoBackup(reason: string) {
   const settings = dbManager.getAppSettings()
   if (!settings.autoBackup) return
 
-  // 如果是因为定时器触发，且数据没变过，则跳过备份
   if (reason === 'timer' && !isDataDirty) return
-
-  // 如果是因为退出触发，且数据没变过，也跳过 (可选，看个人偏好，这里选择跳过以节省空间)
   if (reason === 'exit' && !isDataDirty) return
 
   try {
     const success = await backupManager.createAutoBackup(settings.backupPath)
     if (success) {
       console.log(`[AutoBackup] 备份成功 (${reason})`)
-      isDataDirty = false // 重置脏标记
+      isDataDirty = false
       
-      // 执行清理策略
       await backupManager.cleanOldBackups(settings.backupPath, settings.maxBackups)
     }
   } catch (e) {
@@ -111,7 +107,6 @@ function scheduleBackupTimer() {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.maxtonniu.siliconvaultn')
 
-  // 初始化定时器
   scheduleBackupTimer()
 
   protocol.handle('local-resource', (request) => {
@@ -177,7 +172,35 @@ app.whenReady().then(() => {
 
   // --- 规则与排序 ---
   ipcMain.handle('get-category-rule', (_, cat) => dbManager.getCategoryRule(cat))
-  ipcMain.handle('save-category-rule', (_, { cat, rule }) => dbManager.saveCategoryRule(cat, rule))
+  
+  // 核心修改部分：增加参数解析容错和日志输出
+  ipcMain.handle('save-category-rule', async (_event, ...args) => {
+    // 打印接收到的原始参数以便调试
+    console.log('[IPC DEBUG] save-category-rule args:', JSON.stringify(args))
+
+    let category: string | undefined
+    let rule: any
+
+    // 兼容模式1：多个参数传递 (category, rule)
+    if (args.length >= 2 && typeof args[0] === 'string') {
+      category = args[0]
+      rule = args[1]
+    } 
+    // 兼容模式2：单对象传递 ({ category, rule })
+    else if (args.length === 1 && typeof args[0] === 'object') {
+      const params = args[0]
+      category = params.category || params.cat
+      rule = params.rule
+    }
+
+    if (!category || !rule) {
+      console.error('[IPC ERROR] 参数解析失败', { category, rule, rawArgs: args })
+      throw new Error('参数解析失败：分类或规则数据为空')
+    }
+
+    return dbManager.saveCategoryRule(category, rule)
+  })
+  
   ipcMain.handle('reset-category-rule', (_, cat) => dbManager.resetCategoryRule(cat))
   ipcMain.handle('update-sort-order', (_, { table, ids }) => dbManager.updateSortOrder(table, ids))
 
@@ -364,7 +387,7 @@ app.whenReady().then(() => {
   
   ipcMain.handle('save-app-settings', (_, settings) => {
     dbManager.saveAppSettings(settings)
-    scheduleBackupTimer() // 设置改变后，重置定时器
+    scheduleBackupTimer()
   })
 
   // --- 消耗统计看板 ---
@@ -392,23 +415,14 @@ app.whenReady().then(() => {
   })
 })
 
-// 处理应用退出前的逻辑，特别是自动备份
 app.on('before-quit', async (event) => {
   const settings = dbManager.getAppSettings()
   
-  // 如果开启了自动备份，并且处于需要备份的状态
   if (settings.autoBackup && isDataDirty) {
-    // 阻止立即退出，给予备份时间
     event.preventDefault()
-    
     console.log('[AutoBackup] 正在执行退出备份...')
-    
-    // 执行备份
     await performAutoBackup('exit')
-    
     console.log('[AutoBackup] 退出备份完成，正在关闭应用。')
-    
-    // 强制退出
     app.exit(0)
   }
 })
