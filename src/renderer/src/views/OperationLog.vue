@@ -27,16 +27,15 @@ interface Log {
   created_at: string
 }
 
-// 状态管理
 const logs = ref<Log[]>([])
 const isLoading = ref(false)
 const searchQuery = ref('')
 const filterType = ref<string | null>(null)
+const categoryRules = ref<Record<string, any>>({})
 
 const message = useMessage()
 const dialog = useDialog()
 
-// 筛选选项配置
 const typeOptions: any[] = [
   { label: '全部操作', value: null },
   { label: '库存变动', value: 'STOCK' },
@@ -47,9 +46,23 @@ const typeOptions: any[] = [
   { label: '数据导出', value: 'EXPORT' }
 ]
 
-// 加载日志数据
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error(e) }
+}
+
 const loadLogs = async () => {
   isLoading.value = true
+  await loadRules()
   try {
     logs.value = await window.api.getLogs()
   } catch (e) {
@@ -60,19 +73,20 @@ const loadLogs = async () => {
   }
 }
 
-// 前端实时筛选逻辑
 const filteredLogs = computed(() => {
   return logs.value.filter(log => {
-    // 筛选类型
     const matchType = !filterType.value || log.op_type === filterType.value
-    // 搜索关键词 (忽略大小写)
-    const matchSearch = !searchQuery.value || log.desc.toLowerCase().includes(searchQuery.value.toLowerCase())
+    
+    // 搜索时同时匹配原描述和动态生成的标题
+    const dynamicTitle = getDynamicLogTitle(log)
+    const matchSearch = !searchQuery.value || 
+      log.desc.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      dynamicTitle.toLowerCase().includes(searchQuery.value.toLowerCase())
     
     return matchType && matchSearch
   })
 })
 
-// 计算库存增量
 const getStockDelta = (log: Log) => {
   if (log.op_type !== 'STOCK' || !log.old_data || !log.new_data) return null
   
@@ -89,22 +103,57 @@ const getStockDelta = (log: Log) => {
   }
 }
 
-// 撤销逻辑
+const getDynamicLogTitle = (log: Log) => {
+  // 批量操作或无快照数据时，直接使用原描述
+  if (['IMPORT', 'EXPORT'].includes(log.op_type)) return log.desc
+
+  try {
+    const snapshot = log.new_data ? JSON.parse(log.new_data) : (log.old_data ? JSON.parse(log.old_data) : null)
+    if (!snapshot) return log.desc
+
+    // 获取该分类的显示规则
+    const rule = categoryRules.value[snapshot.category]
+    let targetKey = 'name'
+
+    if (rule?.layout) {
+      if (typeof rule.layout === 'object' && rule.layout.topLeft) {
+        targetKey = rule.layout.topLeft
+      } else if (Array.isArray(rule.layout) && rule.layout[0]) {
+        targetKey = rule.layout[0]
+      }
+    }
+
+    // 获取优先展示的字段值 (如阻值)
+    let displayName = snapshot[targetKey]
+    // 如果首选字段为空 (例如电阻没填阻值)，回退显示名称
+    if (!displayName) displayName = snapshot.name || '未知元件'
+
+    // 根据操作类型生成前缀
+    switch (log.op_type) {
+      case 'CREATE': return `新增: ${displayName}`
+      case 'UPDATE': return `修改: ${displayName}`
+      case 'DELETE': return `删除: ${displayName}`
+      case 'STOCK': return `库存: ${displayName}`
+      default: return `${log.op_type}: ${displayName}`
+    }
+  } catch (e) {
+    return log.desc
+  }
+}
+
 const handleUndo = (log: Log) => {
-  // 针对批量导入操作的安全拦截
   if (log.op_type === 'IMPORT') {
     message.warning('批量导入包含大量数据变更，不支持单步撤销')
     return
   }
 
-  // 导出操作无数据变更，无需撤销
   if (log.op_type === 'EXPORT') {
     return
   }
 
   dialog.warning({
     title: '时光倒流',
-    content: `确定要撤销 "${log.desc}" 吗？\n撤销后，数据将恢复到操作前的状态。`,
+    content: `确定要撤销 "${getDynamicLogTitle(log)}" 吗？\n撤销后，数据将恢复到操作前的状态。`,
     positiveText: '立即撤销',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -120,7 +169,6 @@ const handleUndo = (log: Log) => {
   })
 }
 
-// 格式化时间显示
 const formatTime = (isoString: string) => {
   const date = new Date(isoString)
   return date.toLocaleString('zh-CN', {
@@ -128,7 +176,6 @@ const formatTime = (isoString: string) => {
   }).replace(/\//g, '-')
 }
 
-// 操作类型视觉配置
 const getOpConfig = (type: string) => {
   switch (type) {
     case 'CREATE': return { icon: AddCircleOutline, color: '#30D158', label: '新增' }
@@ -208,7 +255,7 @@ onMounted(() => { loadLogs() })
                   <span class="log-time">{{ formatTime(log.created_at) }}</span>
                 </div>
                 
-                <div class="log-desc">{{ log.desc }}</div>
+                <div class="log-desc">{{ getDynamicLogTitle(log) }}</div>
               </div>
 
               <div v-if="log.op_type === 'STOCK' && getStockDelta(log)" class="delta-display" :class="getStockDelta(log)?.type">

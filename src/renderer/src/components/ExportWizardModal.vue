@@ -12,20 +12,70 @@ import Papa from 'papaparse'
 
 const props = defineProps<{ 
   show: boolean
-  mode?: 'inventory' | 'project' // 作为初始选中的 Tab
+  mode?: 'inventory' | 'project' 
 }>()
 
 const emit = defineEmits(['update:show'])
 const message = useMessage()
 
-// 状态管理
 const activeTab = ref<'inventory' | 'project'>('inventory')
 const isProcessing = ref(false)
 const listData = ref<any[]>([]) 
 const searchQuery = ref('')
 const selectedIds = ref<number[]>([])
+const categoryRules = ref<Record<string, any>>({})
 
-// 数据加载逻辑
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error(e) }
+}
+
+const getItemDisplay = (item: any) => {
+  if (activeTab.value === 'project') {
+    return {
+      primary: item.name,
+      side: '',
+      secondary: item.description || '无备注'
+    }
+  }
+
+  const rule = categoryRules.value[item.category]
+  let targetKey = 'name'
+
+  if (rule?.layout) {
+    if (typeof rule.layout === 'object' && rule.layout.topLeft) {
+      targetKey = rule.layout.topLeft
+    } else if (Array.isArray(rule.layout) && rule.layout[0]) {
+      targetKey = rule.layout[0]
+    }
+  }
+
+  let primary = item[targetKey]
+  if (!primary) primary = item.name || '未命名'
+
+  let side = ''
+  if (targetKey === 'value') {
+    if (item.name && item.name !== primary) side = item.name
+  } else {
+    if (item.value) side = item.value
+  }
+
+  return {
+    primary,
+    side,
+    secondary: `${item.package || '-'} · 库存: ${item.quantity}`
+  }
+}
+
 const loadData = async () => {
   try {
     listData.value = []
@@ -44,12 +94,11 @@ const loadData = async () => {
   }
 }
 
-// 监听弹窗显示或 Tab 切换
 watch(() => props.show, (val) => {
   if (val) {
-    // 如果外部传入了初始模式，则应用，否则保持默认
     if (props.mode) activeTab.value = props.mode
     resetState()
+    loadRules()
     loadData()
   }
 })
@@ -66,7 +115,6 @@ const resetState = () => {
   selectedIds.value = [] 
 }
 
-// 过滤与全选逻辑
 const filteredList = computed(() => {
   if (!searchQuery.value) return listData.value
   const q = searchQuery.value.toLowerCase()
@@ -98,7 +146,6 @@ const toggleItem = (id: number) => {
   else selectedIds.value.push(id)
 }
 
-// 导出 CSV (纯文本表格)
 const handleExportCSV = async () => {
   if (selectedIds.value.length === 0) return message.warning('请至少选择一项')
   
@@ -106,7 +153,6 @@ const handleExportCSV = async () => {
   try {
     const targets = listData.value.filter(i => selectedIds.value.includes(i.id))
     
-    // 清洗数据，移除不需要的内部字段
     const cleanData = targets.map(item => {
       const { id, image_paths, datasheet_paths, files, ...rest } = item
       return rest
@@ -133,13 +179,11 @@ const handleExportCSV = async () => {
 
 }
 
-// 导出资源包 (包含附件的完整备份)
 const handleExportBundle = async () => {
   if (selectedIds.value.length === 0) return message.warning('请至少选择一项')
 
   isProcessing.value = true
   try {
-    // 必须进行深拷贝以移除 Vue 的响应式 Proxy 包装，否则 Electron 无法序列化
     const rawIds = JSON.parse(JSON.stringify(selectedIds.value))
 
     const res = await window.api.exportBundle({
@@ -228,11 +272,11 @@ const handleExportBundle = async () => {
                   <n-tag v-if="item.category" size="small" :bordered="false" type="info" style="margin-right: 8px">
                     {{ item.category }}
                   </n-tag>
-                  {{ item.name }} 
-                  <span v-if="item.value" class="sub-val">[{{ item.value }}]</span>
+                  {{ getItemDisplay(item).primary }} 
+                  <span v-if="getItemDisplay(item).side" class="sub-val">[{{ getItemDisplay(item).side }}]</span>
                 </div>
                 <div class="sub-text">
-                  {{ activeTab === 'inventory' ? `${item.package || '-'} · 库存: ${item.quantity}` : (item.description || '无备注') }}
+                  {{ getItemDisplay(item).secondary }}
                 </div>
               </div>
             </div>
@@ -249,13 +293,16 @@ const handleExportBundle = async () => {
           <div v-if="activeTab === 'project'">
             
 
-[Image of structure]
+
+
+[Image of tree structure]
+
  <strong>智能关联：</strong> 导出资源包时，系统会自动打包项目关联的 BOM 元器件及其图片/手册。
           </div>
           <div v-else>
             
 
-[Image of zip file]
+
  <strong>资源包 (.svdata)：</strong> 本质是 ZIP 压缩包，包含图片和文档，可被其他用户完整导入，也可改后缀为 .zip 解压查看。
           </div>
         </n-alert>

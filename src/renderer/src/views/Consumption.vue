@@ -12,14 +12,12 @@ import {
   TrophyOutline,
   RibbonOutline,
   MedalOutline,
-  TrendingUpOutline // ✅ 修复：补充导入图标
+  TrendingUpOutline 
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts'
 
-// --- 配置区域 ---
 const SHOW_DEBUG_BUTTON = true 
 
-// --- 状态定义 ---
 const loading = ref(false)
 const timeRange = ref<'day' | 'week' | 'month'>('week')
 const isMock = ref(false)
@@ -40,10 +38,11 @@ const data = ref<any>({
   ranking: []
 })
 
+const categoryRules = ref<Record<string, any>>({})
+
 const islandAnimating = ref(false)
 const activeDrillDown = ref<string | null>(null)
 
-// --- 计算属性 ---
 const islandStatus = computed(() => {
   if (activeDrillDown.value) {
     return {
@@ -82,15 +81,50 @@ const islandStatus = computed(() => {
   }
 })
 
-// ✅ 修复：显式指定返回类型为 any[]，确保 v-for 里的 index 被识别为 number
 const top3Ranking = computed<any[]>(() => data.value.ranking.slice(0, 3))
 const restRanking = computed<any[]>(() => data.value.ranking.slice(3))
 
-// --- 核心逻辑 ---
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error('加载规则失败', e) }
+}
+
+const getDisplayName = (item: any) => {
+  const rule = categoryRules.value[item.category]
+  let targetKey = 'name'
+
+  if (rule?.layout) {
+    if (typeof rule.layout === 'object' && rule.layout.topLeft) {
+      targetKey = rule.layout.topLeft
+    } else if (Array.isArray(rule.layout) && rule.layout[0]) {
+      targetKey = rule.layout[0]
+    }
+  }
+
+  let displayVal = item[targetKey]
+
+  if (targetKey === 'value' && typeof displayVal === 'number') {
+    displayVal = item.spec || item.parameter || item.originalValue || item.name 
+  }
+
+  return displayVal || item.name || '未命名'
+}
+
 const loadData = async () => {
   loading.value = true
   islandAnimating.value = true
   setTimeout(() => islandAnimating.value = false, 600)
+
+  await loadRules()
 
   try {
     const res = await window.api.getConsumptionStats(timeRange.value, isMock.value)
@@ -112,20 +146,17 @@ const toggleMock = () => {
   loadData()
 }
 
-// --- 图表渲染 ---
 const initChart = (dom: HTMLElement) => {
   const existingInstance = echarts.getInstanceByDom(dom)
   if (existingInstance) {
     existingInstance.dispose()
   }
-  // ✅ 修复：移除了不合法的 backgroundColor 参数
   return echarts.init(dom, 'dark')
 }
 
 const renderCharts = () => {
   if (!chartTimelineRef.value || !chartRoseRef.value || !chartHeatmapRef.value) return
 
-  // 1. 时光隧道 (面积图)
   chartTimeline = initChart(chartTimelineRef.value)
   const dateList = data.value.timeline.map((i: any) => i.date)
   const valueList = data.value.timeline.map((i: any) => i.value)
@@ -178,7 +209,6 @@ const renderCharts = () => {
     }]
   })
 
-  // 2. 成分分析 (玫瑰图)
   chartRose = initChart(chartRoseRef.value)
   chartRose.on('click', (params) => {
     activeDrillDown.value = params.name
@@ -199,7 +229,6 @@ const renderCharts = () => {
     }]
   })
 
-  // 3. 研发日历 (热力图)
   chartHeatmap = initChart(chartHeatmapRef.value)
   const heatmapData = data.value.heatmap.map((item: any) => [item.date, item.count])
   const maxVal = Math.max(...data.value.heatmap.map((i: any) => i.count), 10)
@@ -269,7 +298,6 @@ onUnmounted(() => {
   chartHeatmap?.dispose()
 })
 
-// 获取前三名的图标
 const getRankIcon = (index: number) => {
   if (index === 0) return TrophyOutline
   if (index === 1) return MedalOutline
@@ -354,7 +382,7 @@ const getRankIcon = (index: number) => {
                   <n-icon size="24" :component="getRankIcon(index)" />
                 </div>
                 <div class="rank-info">
-                  <div class="rank-name" :title="item.name">{{ item.name }}</div>
+                  <div class="rank-name" :title="getDisplayName(item)">{{ getDisplayName(item) }}</div>
                   <div class="rank-cat">{{ item.category }}</div>
                 </div>
                 <div class="rank-value">{{ item.value }}</div>
@@ -380,7 +408,7 @@ const getRankIcon = (index: number) => {
               <div v-for="(item, index) in restRanking" :key="index" class="rank-list-item">
                 <div class="list-index">{{ index + 4 }}</div>
                 <div class="list-info">
-                  <span class="list-name">{{ item.name }}</span>
+                  <span class="list-name">{{ getDisplayName(item) }}</span>
                   <span class="list-cat">{{ item.category }}</span>
                 </div>
                 <div class="list-value">{{ item.value }}</div>
@@ -395,7 +423,6 @@ const getRankIcon = (index: number) => {
 </template>
 
 <style scoped>
-/* 全局背景和布局设置 */
 .consumption-page {
   background-color: transparent; 
   color: #fff;
@@ -405,14 +432,12 @@ const getRankIcon = (index: number) => {
   box-sizing: border-box;
 }
 
-/* 顶部固定区 */
 .header-fixed {
   padding: 20px 24px 0;
-  flex-shrink: 0; /* 防止被压缩 */
+  flex-shrink: 0; 
 }
 
 .island-wrapper { display: flex; justify-content: center; margin-bottom: 20px; }
-/* 复用 ReplenishView 的灵动岛样式基础 */
 .status-island {
   display: flex; align-items: center; justify-content: center; gap: 12px;
   padding: 10px 24px; border-radius: 30px;
@@ -424,7 +449,6 @@ const getRankIcon = (index: number) => {
 .status-island:hover { transform: scale(1.02); }
 .island-text { font-weight: 600; font-size: 14px; }
 
-/* 岛屿状态色 */
 .island-gray { color: #999; }
 .island-blue { color: #70c0e8; background: rgba(112, 192, 232, 0.1); border-color: rgba(112, 192, 232, 0.3); }
 .island-purple { color: #a78bfa; background: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); }
@@ -439,19 +463,16 @@ const getRankIcon = (index: number) => {
 .range-select { width: 140px; }
 .debug-btn { margin-left: auto; }
 
-/* 滚动内容区 */
 .scroll-content {
   flex: 1;
   overflow-y: auto;
-  padding: 0 24px 30px; /* 底部留白 */
+  padding: 0 24px 30px; 
 }
 
-/* 网格布局容器 */
 .dashboard-grid {
   display: flex; flex-direction: column; gap: 20px;
 }
 
-/* 卡片通用样式，参考 ReplenishView */
 .chart-card {
   background-color: #242428;
   border-radius: 16px;
@@ -465,21 +486,18 @@ const getRankIcon = (index: number) => {
   text-transform: uppercase; margin-bottom: 12px;
 }
 
-/* 图表容器最小高度，防止塌缩 */
 .chart-container { width: 100%; }
 .timeline-chart { min-height: 280px; }
 .rose-chart { min-height: 220px; }
 .heatmap-chart { min-height: 200px; }
 
-/* 中间行布局 */
 .middle-row {
   display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px;
 }
 @media (max-width: 900px) {
-  .middle-row { grid-template-columns: 1fr; } /* 小屏幕单列 */
+  .middle-row { grid-template-columns: 1fr; } 
 }
 
-/* === 🏆 Top 3 排行榜卡片 === */
 .top-ranking-container {
   display: flex; flex-direction: column; gap: 12px; justify-content: center;
 }
@@ -506,7 +524,6 @@ const getRankIcon = (index: number) => {
 .rank-cat { font-size: 12px; color: #999; margin-top: 2px; }
 .rank-value { font-family: monospace; font-size: 18px; font-weight: bold; color: #63e2b7; }
 
-/* === 其余排名列表 === */
 .ranking-list-card { padding-bottom: 8px; }
 .rank-list-item {
   display: flex; align-items: center;

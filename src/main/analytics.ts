@@ -11,7 +11,13 @@ export interface ConsumptionData {
   timeline: { date: string; value: number }[]
   categories: { name: string; value: number }[]
   heatmap: { date: string; count: number }[]
-  ranking: { name: string; category: string; value: number }[]
+  ranking: { 
+    name: string
+    category: string
+    value: number
+    originalValue?: string 
+    package?: string       
+  }[]
 }
 
 class AnalyticsManager {
@@ -43,7 +49,6 @@ class AnalyticsManager {
     const startTimeStr = startDate.toISOString().replace('T', ' ').split('.')[0]
 
     // 2. 拉取所有库存变动日志
-    // 我们只关心 'STOCK' 类型的操作，因为这是数量变动的来源
     const logs = db.prepare(`
       SELECT * FROM operation_logs 
       WHERE op_type = 'STOCK' 
@@ -55,7 +60,7 @@ class AnalyticsManager {
     const timelineMap = new Map<string, number>()
     const categoryMap = new Map<string, number>()
     const itemTotalMap = new Map<number, number>()
-    const itemMeta = new Map<number, { name: string; category: string }>() // 缓存元件信息
+    const itemMeta = new Map<number, { name: string; category: string; value: string; package: string }>() 
     
     // 暂存手动操作的净值：Key = "Date_ID"
     const manualNetMap = new Map<string, number>() 
@@ -72,7 +77,10 @@ class AnalyticsManager {
       if (!itemMeta.has(id)) {
         itemMeta.set(id, { 
           name: oldData.name, 
-          category: oldData.category || '未分类' 
+          category: oldData.category || '未分类',
+          // 顺便缓存参数和封装，供前端排行榜动态显示用
+          value: oldData.value || '', 
+          package: oldData.package || ''
         })
       }
 
@@ -89,7 +97,6 @@ class AnalyticsManager {
 
     // 5. 第二遍遍历：正式统计 (BOM 消耗 + 手动净消耗)
     let totalConsumed = 0
-    // [修复] 删除了这里原本未使用的 processedLogs 变量
 
     logs.forEach(log => {
       if (!log.old_data || !log.new_data) return
@@ -111,7 +118,7 @@ class AnalyticsManager {
 
     // 6. 补入手动净值消耗
     manualNetMap.forEach((netChange, key) => {
-      // 只有当一天内累计变动为负数时，才视为消耗 (例如: -100 + 100 = 0 不算; -50 算)
+      // 只有当一天内累计变动为负数时，才视为消耗
       if (netChange < 0) {
         const [date, idStr] = key.split('_')
         const id = Number(idStr)
@@ -139,16 +146,18 @@ class AnalyticsManager {
         return { 
           name: meta?.name || `未知元件 #${id}`, 
           category: meta?.category || '其他', 
-          value 
+          value,
+          // 将缓存的原始参数吐给前端
+          originalValue: meta?.value || '',
+          package: meta?.package || ''
         }
       })
       .sort((a, b) => b.value - a.value)
       .slice(0, 10) // Top 10
 
-    // 热力图数据 (直接复用 timeline，前端会处理日期补全)
+    // 热力图数据
     const heatmap = timeline.map(t => ({ date: t.date, count: t.value }))
 
-    // 活跃项目 (简化处理：暂定为日常研发，真实逻辑需要 logs 关联 project_id)
     const activeProject = "日常研发" 
 
     return {
@@ -174,10 +183,9 @@ class AnalyticsManager {
     itemMap.set(id, (itemMap.get(id) || 0) + qty)
   }
 
-  // --- Mock 数据生成器 (用于前端调试酷炫效果) ---
+  // --- Mock 数据生成器 ---
   
   private generateMockData(range: string): ConsumptionData {
-    // 模拟一段波动的正弦波数据
     const days = range === 'month' ? 30 : 7
     const timeline: { date: string; value: number }[] = []
     const heatmap: { date: string; count: number }[] = []
@@ -190,7 +198,6 @@ class AnalyticsManager {
       d.setDate(now.getDate() - i)
       const dateStr = d.toISOString().split('T')[0]
       
-      // 生成一个类似心跳的波动
       const base = 50
       const noise = Math.random() * 100
       const wave = Math.sin(i * 0.5) * 40
@@ -218,11 +225,11 @@ class AnalyticsManager {
       ],
       heatmap,
       ranking: [
-        { name: '0603 10k 1%', category: '电阻', value: 1204 },
-        { name: 'STM32F103C8T6', category: '芯片(IC)', value: 85 },
-        { name: '100nF 50V', category: '电容', value: 540 },
-        { name: 'Type-C 母座', category: '连接器', value: 42 },
-        { name: 'SS8050', category: '三极管', value: 33 },
+        { name: '0603 10k 1%', category: '电阻', value: 1204, originalValue: '10k', package: '0603' },
+        { name: 'STM32F103C8T6', category: '芯片(IC)', value: 85, originalValue: 'MCU', package: 'LQFP48' },
+        { name: '100nF 50V', category: '电容', value: 540, originalValue: '100nF', package: '0603' },
+        { name: 'Type-C 母座', category: '连接器', value: 42, originalValue: '16Pin', package: 'SMD' },
+        { name: 'SS8050', category: '三极管', value: 33, originalValue: 'NPN', package: 'SOT-23' },
       ]
     }
   }

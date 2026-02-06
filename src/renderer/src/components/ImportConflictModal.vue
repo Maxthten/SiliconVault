@@ -25,6 +25,7 @@ const isImporting = ref(false)
 
 const inventoryDecisions = ref<Record<number, ImportStrategy>>({})
 const projectDecisions = ref<Record<number, ImportStrategy>>({})
+const categoryRules = ref<Record<string, any>>({})
 
 const currentBatchMode = computed(() => {
   if (!props.scanResult) return { inventory: null, projects: null }
@@ -50,6 +51,52 @@ const currentBatchMode = computed(() => {
   }
 })
 
+const loadRules = async () => {
+  try {
+    const cats = await window.api.fetchCategories()
+    const promises = cats.map(async (cat: string) => {
+       const rule = await window.api.getCategoryRule(cat)
+       return { cat, rule }
+    })
+    const results = await Promise.all(promises)
+    const map: Record<string, any> = {}
+    results.forEach(r => map[r.cat] = r.rule)
+    categoryRules.value = map
+  } catch (e) { console.error(e) }
+}
+
+const getItemDisplay = (item: any) => {
+  if (!item) return { primary: 'Unknown', secondary: '' }
+
+  const rule = categoryRules.value[item.category]
+  let targetKey = 'name'
+
+  if (rule?.layout) {
+    if (typeof rule.layout === 'object' && rule.layout.topLeft) {
+      targetKey = rule.layout.topLeft
+    } else if (Array.isArray(rule.layout) && rule.layout[0]) {
+      targetKey = rule.layout[0]
+    }
+  }
+
+  let primary = item[targetKey]
+  if (!primary) primary = item.name || '未命名'
+
+  const parts: string[] = []
+  if (item.package) parts.push(`封装: ${item.package}`)
+
+  if (targetKey === 'value') {
+     if (item.name && item.name !== primary) parts.push(`名称: ${item.name}`)
+  } else {
+     if (item.value) parts.push(`值: ${item.value}`)
+  }
+
+  return {
+    primary,
+    secondary: parts.join(' | ')
+  }
+}
+
 watch(() => props.scanResult, (val) => {
   if (val) {
     inventoryDecisions.value = {}
@@ -63,6 +110,12 @@ watch(() => props.scanResult, (val) => {
     })
   }
 }, { immediate: true })
+
+watch(() => props.show, (val) => {
+  if (val) {
+    loadRules()
+  }
+})
 
 const applyToAll = (type: 'inventory' | 'projects', strategy: ImportStrategy) => {
   if (!props.scanResult) return
@@ -181,9 +234,11 @@ const handleConfirm = async () => {
 
                     <div class="info-line">
                       <n-icon :component="CubeOutline" /> 
-                      <strong>{{ item.remote.name }}</strong>
+                      <strong>{{ getItemDisplay(item.remote).primary }}</strong>
                     </div>
-                    <div class="detail-line">封装: {{ item.remote.package }} | 值: {{ item.remote.value }}</div>
+                    <div class="detail-line">
+                      {{ getItemDisplay(item.remote).secondary }}
+                    </div>
                     <div class="detail-line stock" :class="{ diff: item.remote.quantity !== item.local.quantity }">
                       库存: {{ item.remote.quantity }}
                     </div>
@@ -229,9 +284,11 @@ const handleConfirm = async () => {
                     <div class="mini-badge local-badge">本机</div>
                     <div class="info-line">
                       <n-icon :component="CubeOutline" /> 
-                      <strong>{{ item.local.name }}</strong>
+                      <strong>{{ getItemDisplay(item.local).primary }}</strong>
                     </div>
-                    <div class="detail-line">封装: {{ item.local.package }} | 值: {{ item.local.value }}</div>
+                    <div class="detail-line">
+                      {{ getItemDisplay(item.local).secondary }}
+                    </div>
                     <div class="detail-line stock">库存: {{ item.local.quantity }}</div>
                   </div>
                 </div>
@@ -413,7 +470,6 @@ const handleConfirm = async () => {
 .card.local { border-color: rgba(255,255,255,0.05); }
 .card.remote { border-color: rgba(10, 132, 255, 0.2); background: rgba(10, 132, 255, 0.05); }
 
-/* Badge System */
 .badges-container {
   position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
 }
