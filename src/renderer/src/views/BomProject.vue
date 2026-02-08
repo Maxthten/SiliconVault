@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, h } from 'vue'
+import { ref, watch, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { 
   Add, RocketOutline, CreateOutline, TrashOutline, TimeOutline, Search, 
   CheckmarkOutline, SettingsOutline, DocumentTextOutline, FolderOpenOutline,
-  CloseCircleOutline, FilterOutline
+  
 } from '@vicons/ionicons5'
 import { NButton, NIcon, NEmpty, NSpin, useDialog, useMessage, NInput, NPopover, NCarousel, NDropdown, NTag } from 'naive-ui'
 import { VueDraggable } from 'vue-draggable-plus' 
