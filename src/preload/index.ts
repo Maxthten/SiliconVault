@@ -12,7 +12,11 @@ const api = {
   upsertItem: (data) => ipcRenderer.invoke('upsert-item', data),
 
   // --- 2. BOM 项目 ---
-  getProjects: (query) => ipcRenderer.invoke('get-projects', query),
+  // 修改：支持 query 和 ids 两个参数
+  getProjects: (query, ids) => ipcRenderer.invoke('get-projects', { query, ids }),
+  // 新增：获取关联项目
+  getRelatedProjects: (id) => ipcRenderer.invoke('get-related-projects', id),
+  
   getProjectDetail: (id) => ipcRenderer.invoke('get-project-detail', id),
   saveProject: (project) => ipcRenderer.invoke('save-project', project),
   deleteProject: (id) => ipcRenderer.invoke('delete-project', id),
@@ -38,52 +42,27 @@ const api = {
   getAllProjectsExport: () => ipcRenderer.invoke('get-all-projects-export'), 
   batchImportInventory: (items, mode) => ipcRenderer.invoke('batch-import-inventory', { items, mode }),
   
-  // 导出全量资源包
   exportBundle: (options) => ipcRenderer.invoke('export-bundle', options),
-
-  // 预扫描资源包
   scanBundle: (filePath) => ipcRenderer.invoke('scan-bundle', filePath),
-  
-  // 执行资源包导入
   executeImportBundle: (scanId, strategies) => ipcRenderer.invoke('execute-import-bundle', { scanId, strategies }),
-
-  // 生成 SVData 导入模板
   generateTemplate: (filePath) => ipcRenderer.invoke('generate-template', filePath),
   
-  // 获取文件真实路径
   getFilePath: (file) => webUtils.getPathForFile(file),
 
   // --- 7. 系统设置与资源管理 ---
   getStoragePath: () => ipcRenderer.invoke('get-storage-path'),
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
-  
-  // 打开图片/PDF
   openFile: (relativePath) => ipcRenderer.invoke('open-file', relativePath),
-
-  // 在资源管理器中显示并选中文件
   showItemInFolder: (relativePath) => ipcRenderer.invoke('show-item-in-folder', relativePath),
-  
-  // 保存文件到 assets 目录
   saveAsset: (sourcePath, group, category) => 
     ipcRenderer.invoke('save-asset', { sourcePath, group, category }),
-  
-  // 保存二进制流
   saveBuffer: (buffer, filename, group, category) => 
     ipcRenderer.invoke('save-buffer', { buffer, filename, group, category }),
-
-  // 选择文件夹弹窗
   selectFolder: () => ipcRenderer.invoke('select-folder'),
-  
-  // 执行数据迁移
   updateStoragePath: (newPath) => ipcRenderer.invoke('update-storage-path', newPath),
-
-  // 垃圾文件扫描与清理
   scanUnusedAssets: () => ipcRenderer.invoke('scan-unused-assets'),
   purgeUnusedAssets: (files) => ipcRenderer.invoke('purge-unused-assets', files),
-
-  // 数据库优化
   optimizeDatabase: () => ipcRenderer.invoke('optimize-database'),
-
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // --- 8. 自动备份设置 ---
@@ -99,13 +78,12 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in dts)
+  // @ts-ignore
   window.electron = electronAPI
-  // @ts-ignore (define in dts)
+  // @ts-ignore
   window.api = api
 }
 
-// 类型导出
 export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
 
 export interface InventoryItem {
@@ -119,6 +97,7 @@ export interface InventoryItem {
   min_stock?: number
   image_paths?: string
   datasheet_paths?: string
+  ref_count?: number
 }
 
 export interface BomItem {

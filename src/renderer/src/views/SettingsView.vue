@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue' // 引入 onUnmounted
 import { 
   NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NSpace, NAvatar, NDivider, NCard, NStatistic,
   NSwitch, NSelect, NInputNumber, NCollapseTransition
@@ -9,12 +9,12 @@ import {
   SaveOutline, InformationCircleOutline,
   LogoGithub, HeartOutline, CodeSlashOutline, BookOutline,
   ConstructOutline, TrashBinOutline, LeafOutline, ScanOutline,
-  CloudUploadOutline, TimeOutline
+  CloudUploadOutline, TimeOutline, ColorPaletteOutline, FlashOutline
 } from '@vicons/ionicons5'
 
 import localAvatar from '@renderer/assets/icon.png'
+import { ANIMATION_OPTIONS, DEFAULT_ANIMATION } from '@renderer/config/animations'
 
-// 全局配置区域
 const APP_CONFIG = {
   appName: 'SiliconVault',
   autoVersion: true, 
@@ -35,14 +35,22 @@ const APP_CONFIG = {
 
 const message = useMessage()
 
-// 基础状态
+// 状态
 const currentPath = ref('')
 const newPath = ref('')
 const displayVersion = ref('Loading...')
 const isMigrating = ref(false)
 const showConfirm = ref(false)
+const isInitialized = ref(false) 
 
-// 备份设置状态
+// --- 界面设置 ---
+const uiSettings = ref({
+  transitionName: DEFAULT_ANIMATION
+})
+
+const transitionOptions = ANIMATION_OPTIONS
+
+// 备份设置
 const backupSettings = ref({
   autoBackup: false,
   backupFrequency: 'exit',
@@ -57,14 +65,13 @@ const frequencyOptions = [
   { label: '每 4 小时', value: '4h' }
 ]
 
-// 数据维护状态
+// 维护状态
 const scanResult = ref<any>(null)
 const isScanning = ref(false)
 const isPurging = ref(false)
 const isOptimizing = ref(false)
 const showScanModal = ref(false)
 
-// 格式化文件大小
 const formatSize = (bytes: number) => {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -80,10 +87,16 @@ const init = async () => {
     currentPath.value = path
     newPath.value = path 
 
-    // 加载备份设置
     const settings = await window.api.getAppSettings()
     if (settings) {
       backupSettings.value = settings
+    }
+
+    const savedTransition = localStorage.getItem('ui-transition')
+    if (savedTransition) {
+      uiSettings.value.transitionName = savedTransition
+    } else {
+      uiSettings.value.transitionName = DEFAULT_ANIMATION
     }
 
     if (APP_CONFIG.autoVersion) {
@@ -94,11 +107,31 @@ const init = async () => {
     }
   } catch (e) {
     message.error('初始化信息失败')
+  } finally {
+    setTimeout(() => {
+      isInitialized.value = true
+    }, 100)
   }
 }
 
-// 自动保存备份设置
+// --- 关键优化：离开页面时清理所有消息 ---
+onUnmounted(() => {
+  message.destroyAll()
+})
+
+watch(() => uiSettings.value.transitionName, (newVal) => {
+  if (!isInitialized.value) return 
+
+  localStorage.setItem('ui-transition', newVal)
+  window.dispatchEvent(new Event('ui-transition-changed'))
+  
+  // 优化：缩短提示时间，减少干扰
+  message.success('切换动画已应用', { duration: 1500 })
+})
+
 watch(backupSettings, async (newVal) => {
+  if (!isInitialized.value) return 
+
   try {
     await window.api.saveAppSettings(JSON.parse(JSON.stringify(newVal)))
   } catch (e) {
@@ -106,7 +139,6 @@ watch(backupSettings, async (newVal) => {
   }
 }, { deep: true })
 
-// 选择备份文件夹
 const handleSelectBackupFolder = async () => {
   const path = await window.api.selectFolder()
   if (path) {
@@ -114,22 +146,19 @@ const handleSelectBackupFolder = async () => {
   }
 }
 
-// 打开外部链接
 const openLink = (url: string) => {
   if (url) window.open(url, '_blank')
 }
 
-// 赞助逻辑
 const handleSponsor = async () => {
   if (APP_CONFIG.sponsor.mode === 'url') {
     openLink(APP_CONFIG.sponsor.url)
   } else {
     await window.api.openDataFolder()
-    message.info('已打开数据文件夹，请查看 "Sponsor" 相关图片')
+    message.info('已打开数据文件夹')
   }
 }
 
-// 路径迁移逻辑
 const handleSelectFolder = async () => {
   const path = await window.api.selectFolder()
   if (path) {
@@ -161,9 +190,6 @@ const executeMigration = async () => {
   }
 }
 
-// === 数据维护逻辑 ===
-
-// 扫描未引用资源
 const handleScan = async () => {
   isScanning.value = true
   try {
@@ -171,25 +197,21 @@ const handleScan = async () => {
     scanResult.value = res
     showScanModal.value = true
   } catch (e:any) {
-    console.error('扫描详细错误:', e) 
     message.error(`扫描失败: ${e.message || '未知错误'}`)
   } finally {
     isScanning.value = false
   }
 }
 
-// 执行清理
 const executePurge = async () => {
   if (!scanResult.value || scanResult.value.items.length === 0) return
-  
   isPurging.value = true
   const filesToDelete = scanResult.value.items.map(i => i.relativePath)
-  
   try {
     const res = await window.api.purgeUnusedAssets(filesToDelete)
-    message.success(`清理完成：成功删除 ${res.successCount} 个文件，释放 ${formatSize(res.freedSpace)}`)
+    message.success(`清理完成：释放 ${formatSize(res.freedSpace)}`)
     showScanModal.value = false
-    scanResult.value = null // 重置结果
+    scanResult.value = null 
   } catch (e) {
     message.error('清理过程中发生错误')
   } finally {
@@ -197,14 +219,12 @@ const executePurge = async () => {
   }
 }
 
-// 数据库深度优化
 const handleOptimize = async () => {
   isOptimizing.value = true
   try {
     const res = await window.api.optimizeDatabase()
-    message.success(`优化完成：清理了 ${res.orphansRemoved} 条孤立数据，并重组了数据库结构`)
+    message.success(`优化完成：清理了 ${res.orphansRemoved} 条孤立数据`)
   } catch (e:any) {
-    console.error('优化详细错误:', e) 
     message.error(`数据库优化失败: ${e.message}`)
   } finally {
     isOptimizing.value = false
@@ -223,6 +243,30 @@ onMounted(init)
     </div>
 
     <div class="section">
+      <div class="section-title">
+        <n-icon :component="ColorPaletteOutline" />
+        <span>外观与风格</span>
+      </div>
+      
+      <div class="ui-panel">
+        <div class="form-grid">
+          <div class="form-item full-width">
+            <div class="label">页面转场动画</div>
+            <n-select 
+              v-model:value="uiSettings.transitionName" 
+              :options="transitionOptions" 
+              placeholder="选择切换动画"
+            />
+            <div class="sub-label" style="margin-top: 5px; font-size: 12px; color: #666;">
+              <n-icon :component="FlashOutline" style="vertical-align: middle; margin-right: 4px;" />
+              决定页面切换时的视觉流畅度与速度
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" style="margin-top: 40px;">
       <div class="section-title">
         <n-icon :component="SaveOutline" />
         <span>数据存储库</span>
@@ -515,6 +559,18 @@ onMounted(init)
   display: flex; align-items: center; gap: 10px; 
   font-size: 18px; font-weight: 600; color: #ddd; 
   margin-bottom: 20px; 
+}
+
+/* UI 设置面板 */
+.ui-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 25px;
+  transition: all 0.3s;
+}
+.ui-panel:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* 路径卡片 */

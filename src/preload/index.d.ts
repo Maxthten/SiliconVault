@@ -11,6 +11,7 @@ export interface InventoryItem {
   min_stock?: number
   image_paths?: string
   datasheet_paths?: string
+  ref_count?: number // 新增：引用计数
 }
 
 export interface BomItem {
@@ -58,7 +59,6 @@ export interface CategoryRule {
   packageLabel: string
 }
 
-// 自动备份设置 (新增)
 export interface AppSettings {
   autoBackup: boolean
   backupFrequency: 'exit' | '30min' | '1h' | '4h'
@@ -66,7 +66,6 @@ export interface AppSettings {
   maxBackups: number
 }
 
-// 资源包导入扫描结果
 export interface ScanResult {
   scanId: string
   meta: {
@@ -86,7 +85,6 @@ export interface ScanResult {
   }
 }
 
-// 垃圾文件清理扫描结果
 export interface UnusedAsset {
   name: string
   relativePath: string
@@ -106,7 +104,6 @@ export interface PurgeResult {
   freedSpace: number
 }
 
-// --- 消耗看板数据结构 ---
 export interface ConsumptionData {
   summary: {
     totalQuantity: number
@@ -140,7 +137,11 @@ declare global {
       upsertItem: (data: InventoryItem) => Promise<void>
 
       // --- BOM 项目管理 ---
-      getProjects: (query?: string) => Promise<BomProject[]>
+      // 修改：支持 query 字符串或 IDs 数组
+      getProjects: (query?: string, ids?: number[]) => Promise<BomProject[]>
+      // 新增：获取关联项目
+      getRelatedProjects: (id: number) => Promise<Array<{ id: number, name: string }>>
+      
       getProjectDetail: (id: number) => Promise<BomItem[]>
       saveProject: (project: BomProject) => Promise<void>
       deleteProject: (id: number) => Promise<void>
@@ -179,7 +180,6 @@ declare global {
       
       executeImportBundle: (scanId: string, strategies: ImportStrategies) => Promise<{ success: boolean }>
 
-      // 生成导入模板
       generateTemplate: (filePath: string) => Promise<{ success: boolean }>
 
       // --- 数据维护与清理 ---
@@ -190,25 +190,16 @@ declare global {
       // --- 资源与系统设置 ---
       getStoragePath: () => Promise<string>
       openDataFolder: () => Promise<void>
-      
-      // 打开文件 (使用系统默认程序)
       openFile: (relativePath: string) => Promise<void>
-      
-      // 在资源管理器中显示并选中文件
       showItemInFolder: (relativePath: string) => Promise<void>
-
       selectFolder: () => Promise<string | null>
       updateStoragePath: (newPath: string) => Promise<boolean>
       getAppVersion: () => Promise<string>
-      
-      // 资源保存接口
       saveAsset: (sourcePath: string, group: string, category: string) => Promise<string>
       saveBuffer: (buffer: ArrayBuffer, filename: string, group: string, category: string) => Promise<string>
-      
-      // 获取文件真实路径
       getFilePath: (file: File) => string
 
-      // --- 自动备份设置 (新增) ---
+      // --- 自动备份设置 ---
       getAppSettings: () => Promise<AppSettings>
       saveAppSettings: (settings: AppSettings) => Promise<void>
     }

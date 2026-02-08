@@ -4,7 +4,6 @@ import fs from 'fs'
 import { app } from 'electron'
 import Store from 'electron-store'
 
-// 初始化配置存储
 const store = new Store()
 
 // --- 类型定义 ---
@@ -20,6 +19,7 @@ export interface InventoryItem {
   min_stock?: number
   image_paths?: string 
   datasheet_paths?: string
+  ref_count?: number // 新增：被BOM引用的次数
 }
 
 export interface BomProject {
@@ -48,12 +48,11 @@ export interface FilterOptions {
   package?: string
 }
 
-// 定义 2x2 插槽布局结构
 export interface CategoryLayout {
-  topLeft: string      // 左上 (核心大字)
-  topRight: string     // 右上 (标签/胶囊)
-  bottomLeft: string   // 左下 (辅助信息)
-  bottomRight: string  // 右下 (图标信息)
+  topLeft: string
+  topRight: string
+  bottomLeft: string
+  bottomRight: string
 }
 
 export interface CategoryRule {
@@ -62,8 +61,7 @@ export interface CategoryRule {
   valueLabel: string
   valuePlaceholder: string
   packageLabel: string
-  // 布局配置，不再是数组，而是明确的插槽映射
-  layout?: CategoryLayout 
+  layout?: CategoryLayout
 }
 
 export interface OperationLog {
@@ -366,22 +364,50 @@ class DBManager {
   }
 
   public fetchGrouped(filters: FilterOptions = {}): Record<string, InventoryItem[]> {
-    let sql = "SELECT * FROM inventory WHERE 1=1"
+    // 关键修改：左连接 project_items 并计算引用数量
+    let sql = `
+      SELECT inventory.*, COUNT(project_items.project_id) as ref_count 
+      FROM inventory 
+      LEFT JOIN project_items ON inventory.id = project_items.inventory_id 
+      WHERE 1=1
+    `
     const params: any[] = []
 
     if (filters.keyword?.trim()) {
-      sql += " AND (name LIKE ? OR value LIKE ? OR location LIKE ?)"
-      const p = `%${filters.keyword}%`
-      params.push(p, p, p)
+      const rawKey = filters.keyword.trim()
+      
+      const greekMuKey = rawKey.replace(/u/gi, '\u03BC')
+      const microSignKey = rawKey.replace(/u/gi, '\u00B5')
+
+      const pRaw = `%${rawKey}%`
+      const pGreek = `%${greekMuKey}%`
+      const pMicro = `%${microSignKey}%`
+
+      // 注意：使用 inventory. 前缀明确表来源
+      sql += ` AND (
+        (inventory.name LIKE ? OR inventory.name LIKE ? OR inventory.name LIKE ?) OR 
+        (inventory.value LIKE ? OR inventory.value LIKE ? OR inventory.value LIKE ?) OR 
+        (inventory.location LIKE ? OR inventory.location LIKE ? OR inventory.location LIKE ?)
+      )`
+      
+      params.push(
+        pRaw, pGreek, pMicro,
+        pRaw, pGreek, pMicro,
+        pRaw, pGreek, pMicro
+      )
     }
+
     if (filters.category && filters.category !== '全部分类') {
-      sql += " AND category = ?"
+      sql += " AND inventory.category = ?"
       params.push(filters.category)
     }
     if (filters.package && filters.package !== '全部封装') {
-      sql += " AND package = ?"
+      sql += " AND inventory.package = ?"
       params.push(filters.package)
     }
+
+    // 必须按 inventory.id 分组以计算准确的 count
+    sql += " GROUP BY inventory.id"
 
     let orderMap = new Map<number, number>()
     try {
@@ -500,12 +526,17 @@ class DBManager {
     tx()
   }
 
-  public getProjects(query: string = ""): BomProject[] {
-    let sql = "SELECT * FROM projects"
+  // 修改：支持通过 ids 数组精确查询项目
+  public getProjects(query: string = "", ids?: number[]): BomProject[] {
+    let sql = "SELECT * FROM projects WHERE 1=1"
     const params: any[] = []
     
-    if (query?.trim()) {
-      sql += " WHERE name LIKE ? OR description LIKE ?"
+    if (ids && ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',')
+      sql += ` AND id IN (${placeholders})`
+      params.push(...ids)
+    } else if (query?.trim()) {
+      sql += " AND (name LIKE ? OR description LIKE ?)"
       const p = `%${query}%`
       params.push(p, p)
     }
@@ -526,6 +557,18 @@ class DBManager {
     })
 
     return rows
+  }
+
+  // 新增：获取指定元件关联的所有项目
+  public getRelatedProjects(inventoryId: number): { id: number, name: string }[] {
+    const sql = `
+      SELECT p.id, p.name 
+      FROM projects p
+      JOIN project_items pi ON p.id = pi.project_id
+      WHERE pi.inventory_id = ?
+      ORDER BY p.name ASC
+    `
+    return this.db.prepare(sql).all(inventoryId) as { id: number, name: string }[]
   }
 
   public getProjectDetail(projectId: number): BomItem[] {

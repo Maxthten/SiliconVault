@@ -12,7 +12,6 @@ import { analyticsManager } from './analytics'
 
 const store = new Store()
 
-// 自动备份相关的状态变量
 let isDataDirty = false
 let backupTimer: NodeJS.Timeout | null = null
 
@@ -57,8 +56,6 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
-
-// --- 自动备份逻辑 ---
 
 function markDataDirty() {
   isDataDirty = true
@@ -152,7 +149,13 @@ app.whenReady().then(() => {
   })
 
   // --- BOM 项目管理 ---
-  ipcMain.handle('get-projects', (_, query) => dbManager.getProjects(query))
+  
+  // 修改：支持 query 和 ids 筛选
+  ipcMain.handle('get-projects', (_, { query, ids } = {}) => dbManager.getProjects(query, ids))
+  
+  // 新增：获取关联项目
+  ipcMain.handle('get-related-projects', (_, id) => dbManager.getRelatedProjects(id))
+  
   ipcMain.handle('get-project-detail', (_, id) => dbManager.getProjectDetail(id))
   
   ipcMain.handle('save-project', (_, project) => {
@@ -173,20 +176,16 @@ app.whenReady().then(() => {
   // --- 规则与排序 ---
   ipcMain.handle('get-category-rule', (_, cat) => dbManager.getCategoryRule(cat))
   
-  // 核心修改部分：增加参数解析容错和日志输出
   ipcMain.handle('save-category-rule', async (_event, ...args) => {
-    // 打印接收到的原始参数以便调试
     console.log('[IPC DEBUG] save-category-rule args:', JSON.stringify(args))
 
     let category: string | undefined
     let rule: any
 
-    // 兼容模式1：多个参数传递 (category, rule)
     if (args.length >= 2 && typeof args[0] === 'string') {
       category = args[0]
       rule = args[1]
     } 
-    // 兼容模式2：单对象传递 ({ category, rule })
     else if (args.length === 1 && typeof args[0] === 'object') {
       const params = args[0]
       category = params.category || params.cat
