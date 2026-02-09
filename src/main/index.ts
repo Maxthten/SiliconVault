@@ -1,20 +1,3 @@
-/*
- * SiliconVault - Electronic Component Inventory Management System
- * Copyright (C) 2026 Maxton Niu
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
 import { join, basename, extname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -48,11 +31,13 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
+    // 物理限制：预留 20px 缓冲空间 (900-20, 600-20)
+    minWidth: 780,  
+    minHeight: 580, 
     show: false,
     autoHideMenuBar: true,
     title: 'SiliconVault',
     icon: icon,
-    
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -90,7 +75,6 @@ async function performAutoBackup(reason: string) {
     if (success) {
       console.log(`[AutoBackup] 备份成功 (${reason})`)
       isDataDirty = false
-      
       await backupManager.cleanOldBackups(settings.backupPath, settings.maxBackups)
     }
   } catch (e) {
@@ -141,11 +125,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // ===============================================
-  //  IPC API 注册区域
-  // ===============================================
-
-  // --- 库存管理 ---
+  // IPC 注册
   ipcMain.handle('get-categories', () => dbManager.fetchCategories())
   ipcMain.handle('get-packages', (_, category) => dbManager.fetchPackages(category))
   ipcMain.handle('get-inventory', (_, filters) => dbManager.fetchGrouped(filters))
@@ -165,14 +145,8 @@ app.whenReady().then(() => {
     markDataDirty()
   })
 
-  // --- BOM 项目管理 ---
-  
-  // 修改：支持 query 和 ids 筛选
   ipcMain.handle('get-projects', (_, { query, ids } = {}) => dbManager.getProjects(query, ids))
-  
-  // 新增：获取关联项目
   ipcMain.handle('get-related-projects', (_, id) => dbManager.getRelatedProjects(id))
-  
   ipcMain.handle('get-project-detail', (_, id) => dbManager.getProjectDetail(id))
   
   ipcMain.handle('save-project', (_, project) => {
@@ -190,12 +164,9 @@ app.whenReady().then(() => {
     markDataDirty()
   })
 
-  // --- 规则与排序 ---
   ipcMain.handle('get-category-rule', (_, cat) => dbManager.getCategoryRule(cat))
   
   ipcMain.handle('save-category-rule', async (_event, ...args) => {
-    console.log('[IPC DEBUG] save-category-rule args:', JSON.stringify(args))
-
     let category: string | undefined
     let rule: any
 
@@ -210,8 +181,7 @@ app.whenReady().then(() => {
     }
 
     if (!category || !rule) {
-      console.error('[IPC ERROR] 参数解析失败', { category, rule, rawArgs: args })
-      throw new Error('参数解析失败：分类或规则数据为空')
+      throw new Error('参数解析失败')
     }
 
     return dbManager.saveCategoryRule(category, rule)
@@ -220,7 +190,6 @@ app.whenReady().then(() => {
   ipcMain.handle('reset-category-rule', (_, cat) => dbManager.resetCategoryRule(cat))
   ipcMain.handle('update-sort-order', (_, { table, ids }) => dbManager.updateSortOrder(table, ids))
 
-  // --- 日志 ---
   ipcMain.handle('get-logs', () => dbManager.getLogs())
   
   ipcMain.handle('undo-operation', (_, logId) => {
@@ -228,7 +197,6 @@ app.whenReady().then(() => {
     markDataDirty()
   })
 
-  // --- CSV 导出 ---
   ipcMain.handle('export-data', async (_, { title, content, filename }) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: title || '导出数据',
@@ -245,7 +213,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // --- CSV 导入 ---
   ipcMain.handle('read-file-text', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
@@ -269,7 +236,6 @@ app.whenReady().then(() => {
     return result
   })
 
-  // --- 系统与路径 ---
   ipcMain.handle('get-storage-path', () => dbManager.getStoragePath())
   ipcMain.handle('open-data-folder', () => { shell.openPath(dbManager.getStoragePath()) })
   
@@ -285,7 +251,6 @@ app.whenReady().then(() => {
     shell.showItemInFolder(fullPath)
   })
 
-  // --- 资源保存 ---
   ipcMain.handle('save-asset', async (_, { sourcePath, group, category }) => {
     try {
       const storagePath = dbManager.getStoragePath()
@@ -355,8 +320,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // --- 资源包 (Backup/Restore) ---
-  
   ipcMain.handle('generate-template', async (_event, filePath) => {
     return await backupManager.generateTemplate(filePath)
   })
@@ -397,8 +360,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // --- 自动备份设置 ---
-  
   ipcMain.handle('get-app-settings', () => dbManager.getAppSettings())
   
   ipcMain.handle('save-app-settings', (_, settings) => {
@@ -406,12 +367,10 @@ app.whenReady().then(() => {
     scheduleBackupTimer()
   })
 
-  // --- 消耗统计看板 ---
   ipcMain.handle('get-consumption-stats', (_, { range, useMock }) => {
     return analyticsManager.getConsumptionStats(range, useMock)
   })
 
-  // --- 数据维护与清理 ---
   ipcMain.handle('scan-unused-assets', async () => {
     return maintenanceManager.scanUnusedAssets()
   })

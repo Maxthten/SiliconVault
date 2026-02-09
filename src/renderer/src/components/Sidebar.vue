@@ -25,7 +25,7 @@ import {
   TimeOutline, 
   ServerOutline, 
   SettingsOutline,
-  StatsChartOutline //  1. 引入图表图标
+  StatsChartOutline 
 } from '@vicons/ionicons5'
 import { NIcon, NTooltip } from 'naive-ui'
 
@@ -196,7 +196,7 @@ onUnmounted(() => {
   align-items: center; 
 }
 
-/*  关键 CSS：将此容器顶到底部 */
+/* 关键 CSS：将此容器顶到底部 */
 .bottom-group {
   margin-top: auto; 
   display: flex;
@@ -233,7 +233,4 @@ onUnmounted(() => {
 }
 .shake-anim { animation: shake 2.5s ease-in-out infinite; transform-origin: center center; }
 
-@media (max-width: 768px) {
-  .sidebar { display: none !important; }
-}
 </style>
