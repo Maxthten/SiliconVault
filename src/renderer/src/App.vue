@@ -2,7 +2,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { darkTheme, GlobalThemeOverrides, NConfigProvider, NGlobalStyle, NMessageProvider, NDialogProvider } from 'naive-ui'
 import Sidebar from './components/Sidebar.vue'
-import BottomBar from './components/BottomBar.vue'
 import { DEFAULT_ANIMATION } from '@renderer/config/animations'
 
 // 定制 Naive UI 主题色 & 全局组件质感

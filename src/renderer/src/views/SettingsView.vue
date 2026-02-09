@@ -477,6 +477,11 @@ onMounted(init)
         </div>
         <div class="version">{{ displayVersion }}</div>
         <div class="copyright">© 2026 {{ APP_CONFIG.developerName }}. All rights reserved.</div>
+        <div class="license-declaration">
+          Licensed under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" style="color: inherit; text-decoration: underline;">GNU AGPL v3</a>.
+          <br>
+          This program comes with ABSOLUTELY NO WARRANTY.
+        </div>
       </div>
     </div>
 
@@ -706,6 +711,15 @@ onMounted(init)
   display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
 .app-name { display: flex; align-items: center; gap: 6px; font-weight: bold; color: #666; font-size: 14px; }
+
+.license-declaration {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #666;
+  line-height: 1.4;
+  max-width: 300px;
+  opacity: 0.8;
+}
 
 /* 通用弹窗 */
 .modal-content { padding: 10px 0; }

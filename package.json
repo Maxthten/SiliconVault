@@ -5,6 +5,7 @@
   "description": "电子元器件库存管理系统",
   "main": "./out/main/index.js",
   "author": "Maxton Niu",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

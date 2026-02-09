@@ -1,3 +1,20 @@
+<!--
+ * SiliconVault - Electronic Component Inventory Management System
+ * Copyright (C) 2026 Maxton Niu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -8,7 +25,7 @@ import {
   TimeOutline, 
   ServerOutline, 
   SettingsOutline,
-  StatsChartOutline // 🔥 1. 引入图表图标
+  StatsChartOutline //  1. 引入图表图标
 } from '@vicons/ionicons5'
 import { NIcon, NTooltip } from 'naive-ui'
 
@@ -179,7 +196,7 @@ onUnmounted(() => {
   align-items: center; 
 }
 
-/* 🔥 关键 CSS：将此容器顶到底部 */
+/*  关键 CSS：将此容器顶到底部 */
 .bottom-group {
   margin-top: auto; 
   display: flex;
