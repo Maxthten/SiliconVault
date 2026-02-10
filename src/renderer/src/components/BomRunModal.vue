@@ -286,10 +286,21 @@ const doExecute = async () => {
 </template>
 
 <style scoped>
-.run-modal { width: 650px; background-color: #1c1c1e; border-radius: 16px; }
+.run-modal { 
+  width: 650px; 
+  /* 模态框背景变量化 */
+  background-color: var(--bg-modal); 
+  border-radius: 16px; 
+}
+
+/* 标题颜色适配 */
+:deep(.n-card-header__main) {
+  color: var(--text-primary);
+}
 
 .control-container {
-  background: rgba(255,255,255,0.03); 
+  /* 控制面板背景改为侧边栏色，增加层次 */
+  background: var(--bg-sidebar); 
   border-radius: 12px; 
   padding: 24px;
   margin-bottom: 20px;
@@ -297,36 +308,60 @@ const doExecute = async () => {
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  border: 1px solid var(--border-main);
 }
 
 .control-panel { display: flex; align-items: center; justify-content: center; gap: 16px; }
 .input-group { display: flex; align-items: center; gap: 12px; }
-.label { font-size: 16px; font-weight: 500; color: #fff; }
+.label { font-size: 16px; font-weight: 500; color: var(--text-primary); }
 .multiplier-input { width: 140px; text-align: center; }
 .max-btn { font-weight: 500; }
 
-.stock-info { font-size: 13px; color: #888; transition: color 0.3s; }
-.limit-info { margin-left: 6px; color: #666; }
+.stock-info { font-size: 13px; color: var(--text-tertiary); transition: color 0.3s; }
+.limit-info { margin-left: 6px; color: var(--text-tertiary); }
 .stock-warning { color: #ffaa00; font-weight: 500; }
 
-.detail-panel { margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0 12px; }
+.detail-panel { 
+  margin-bottom: 20px; 
+  border: 1px solid var(--border-main); 
+  border-radius: 8px; padding: 0 12px; 
+  background: var(--bg-card); /* 表格容器背景 */
+}
 .table-container { max-height: 300px; overflow-y: auto; margin-bottom: 10px; }
 
-.cell-content { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; }
-.cell-main { font-weight: 600; font-size: 14px; color: #eee; }
-.cell-sub { font-size: 12px; color: #888; margin-top: 1px; }
-
-.manual-input { width: 80px; }
-.neg-stock { color: #FF453A; font-weight: bold; }
-.warning-text { color: #FF453A; font-weight: 800; }
 
 .dark-table { background: transparent; }
-:deep(.n-table th), :deep(.n-table td) { 
+:deep(.n-table th) {
+  background: rgba(0,0,0,0.02) !important; /* 表头淡色背景 */
+  color: var(--text-secondary) !important;
+  border-bottom: 1px solid var(--border-main) !important;
+}
+:deep(.n-table td) { 
   background: transparent; 
-  color: #ddd; 
-  border-bottom: 1px solid rgba(255,255,255,0.1); 
+  color: var(--text-primary) !important; /* 单元格文字颜色 */
+  border-bottom: 1px solid var(--border-main) !important; 
   vertical-align: middle;
 }
 
+/* 单元格内容 */
+.cell-content { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; }
+.cell-main { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.cell-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
+
+/* 手动输入框背景适配 */
+.manual-input { width: 80px; }
+:deep(.manual-input .n-input) {
+  background-color: var(--bg-sidebar) !important;
+}
+
+.neg-stock { color: #FF453A; font-weight: bold; }
+.warning-text { color: #FF453A; font-weight: 800; }
+
+/* 底部操作栏适配 */
+:deep(.n-card__footer) {
+  border-top: 1px solid var(--border-main);
+  background: rgba(0,0,0,0.02);
+  padding: 16px 24px !important;
+}
 .footer { display: flex; justify-content: flex-end; gap: 12px; }
 </style>

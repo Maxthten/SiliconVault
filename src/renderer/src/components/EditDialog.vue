@@ -131,7 +131,6 @@ const processFiles = async (files: File[]) => {
 
       if (sourcePath) {
         // 方案 A: 有路径，直接复制文件
-        // 传递 group 和 category 用于后端分类存储
         newFilename = await window.api.saveAsset(sourcePath, group, category)
       } else {
         // 方案 B: 无路径 (如截图)，传递二进制流
@@ -429,9 +428,16 @@ const handleSave = async () => {
 <style scoped>
 .ios-modal-card { 
   width: 500px; 
-  background-color: #1c1c1e; 
+  /* 背景颜色变量化 */
+  background-color: var(--bg-modal); 
   border-radius: 16px; 
   box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 亮色模式下阴影减淡 */
+:global([data-theme="light"]) .ios-modal-card {
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
 }
 
 .upload-container {
@@ -440,6 +446,7 @@ const handleSave = async () => {
 
 .drop-zone {
   position: relative;
+  /* 上传背景变量化 */
   background: rgba(255, 255, 255, 0.03);
   border: 2px dashed rgba(255, 255, 255, 0.15);
   border-radius: 12px;
@@ -448,6 +455,12 @@ const handleSave = async () => {
   cursor: pointer;
   transition: all 0.2s ease;
   outline: none;
+}
+
+/* 亮色模式覆写 */
+:global([data-theme="light"]) .drop-zone {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.1);
 }
 
 .drop-zone:hover, .drop-zone:focus {
@@ -462,10 +475,21 @@ const handleSave = async () => {
 }
 
 .zone-content { pointer-events: none; }
-.upload-icon { color: #666; margin-bottom: 8px; transition: color 0.2s; }
+.upload-icon { 
+  color: var(--text-tertiary); /*图标颜色 */
+  margin-bottom: 8px; transition: color 0.2s; 
+}
 .drop-zone:hover .upload-icon { color: #0A84FF; }
-.hint-main { font-size: 14px; color: #ddd; font-weight: 500; margin-bottom: 4px; }
-.hint-sub { font-size: 12px; color: #666; }
+
+.hint-main { 
+  font-size: 14px; 
+  color: var(--text-primary); /* 主提示文字 */
+  font-weight: 500; margin-bottom: 4px; 
+}
+.hint-sub { 
+  font-size: 12px; 
+  color: var(--text-tertiary); /* 副提示文字 */
+}
 
 .upload-spin {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -478,8 +502,8 @@ const handleSave = async () => {
   width: 70px; height: 70px; 
   position: relative;
   border-radius: 8px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: #000;
+  border: 1px solid var(--border-main); /* 边框变量化 */
+  background: #000; /* 图片背景保持黑色 */
   cursor: grab;
 }
 .img-item:active { cursor: grabbing; }
@@ -495,11 +519,16 @@ const handleSave = async () => {
 .doc-list { display: flex; flex-direction: column; gap: 8px; }
 .doc-item {
   display: flex; align-items: center; gap: 10px;
-  background: rgba(255,255,255,0.05);
+  /* 文档背景自适应 */
+  background: var(--border-main);
   padding: 8px 12px; border-radius: 8px;
   position: relative;
 }
-.doc-name { font-size: 13px; color: #ddd; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-name { 
+  font-size: 13px; 
+  color: var(--text-primary); /* 文字颜色 */
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+}
 
 .remove-btn {
   position: absolute; top: 2px; right: 2px;
@@ -511,11 +540,21 @@ const handleSave = async () => {
 .img-item:hover .remove-btn { opacity: 1; }
 .remove-btn:hover { background: #FF453A; }
 
-.doc-remove { position: static; opacity: 0.5; background: transparent; }
+.doc-remove { 
+  position: static; opacity: 0.5; background: transparent; 
+  color: var(--text-secondary); /* 删除按钮颜色 */
+}
 .doc-remove:hover { opacity: 1; background: transparent; color: #FF453A; }
 
-:deep(.n-card-header__main) { color: white; font-weight: 700; }
-:deep(.n-form-item-label) { color: #8e8e93 !important; }
+/* 深度选择器颜色*/
+:deep(.n-card-header__main) { 
+  color: var(--text-primary) !important; 
+  font-weight: 700; 
+}
+:deep(.n-form-item-label) { 
+  color: var(--text-secondary) !important; 
+}
+
 .cat-row { display: flex; gap: 8px; width: 100%; }
 .cat-select { flex: 1; }
 .row-2 { display: flex; gap: 12px; }
@@ -524,9 +563,13 @@ const handleSave = async () => {
 .footer-btns { display: flex; justify-content: flex-end; gap: 12px; margin-top: 10px; }
 .btn-save { padding: 0 24px; font-weight: 600; }
 .label-container { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+
 .smart-tag {
   display: flex; align-items: center; gap: 4px; padding: 2px 8px;
-  border-radius: 6px; background-color: rgba(255, 255, 255, 0.1); color: #888;
+  border-radius: 6px; 
+  /* 标准化按钮背景 */
+  background-color: var(--border-main); 
+  color: var(--text-secondary);
   cursor: pointer; transition: all 0.3s; user-select: none; font-size: 11px; font-weight: bold;
 }
 .smart-tag.active { background-color: #63e2b7; color: #000; }

@@ -395,7 +395,7 @@ const handleSave = async () => {
           </div>
 
           <div class="divider">
-            <n-icon :component="ArrowForward" color="#666" size="20" />
+            <n-icon :component="ArrowForward" class="arrow-icon" size="20" />
           </div>
 
           <div class="panel right-panel">
@@ -442,7 +442,8 @@ const handleSave = async () => {
 .bom-modal {
   width: 950px;
   height: 800px;
-  background-color: #1c1c1e;
+  /* 背景变量化 */
+  background-color: var(--bg-modal);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -452,12 +453,18 @@ const handleSave = async () => {
   flex: 1; overflow: hidden; padding: 20px 24px !important;
   display: flex; flex-direction: column;
 }
-:deep(.n-card-header) { padding: 20px 24px 10px 24px !important; }
+:deep(.n-card-header) { 
+  padding: 20px 24px 10px 24px !important; 
+  /* 标题颜色 */
+  color: var(--text-primary);
+}
 :deep(.n-card__footer) {
   padding: 16px 24px !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(0,0,0,0.2);
+  border-top: 1px solid var(--border-main);
+  background: rgba(0,0,0,0.02);
 }
+
+.modal-header span { font-weight: bold; font-size: 18px; color: var(--text-primary); }
 
 .editor-layout { display: flex; flex-direction: column; height: 100%; gap: 16px; }
 
@@ -466,57 +473,64 @@ const handleSave = async () => {
 .name-input { font-weight: bold; }
 
 .upload-panel {
-  background: rgba(255,255,255,0.03);
-  border: 1px dashed rgba(255,255,255,0.1);
+  background: var(--bg-sidebar); 
+  border: 1px dashed var(--border-main);
   border-radius: 8px;
   padding: 12px;
   flex-shrink: 0;
   display: flex; gap: 12px;
   height: 100px; 
 }
+
 .drop-zone {
   width: 200px; height: 100%;
-  border: 1px dashed rgba(255,255,255,0.2);
+  border: 1px dashed var(--border-main);
   border-radius: 6px;
   display: flex; justify-content: center; align-items: center;
   cursor: pointer; position: relative;
   transition: all 0.2s;
+  background: var(--bg-card); 
 }
-.drop-zone:hover, .drop-zone.is-dragover { background: rgba(255,255,255,0.05); border-color: #0A84FF; }
-.zone-content { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #888; font-size: 12px; text-align: center; }
+.drop-zone:hover, .drop-zone.is-dragover { background: var(--border-hover); border-color: #0A84FF; }
+.zone-content { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-tertiary); font-size: 12px; text-align: center; }
 
 .file-grid { flex: 1; overflow-x: auto; overflow-y: hidden; }
 .file-grid-inner { display: flex; gap: 10px; height: 100%; align-items: center; }
 .file-item {
   width: 80px; height: 100%;
-  background: rgba(0,0,0,0.3); border-radius: 6px;
+  background: var(--bg-card); border: 1px solid var(--border-main);
+  border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   position: relative; cursor: pointer;
   padding: 4px; box-sizing: border-box;
 }
-.file-item:hover { background: rgba(255,255,255,0.1); }
-.file-icon { width: 40px; height: 40px; display: flex; justify-content: center; align-items: center; font-size: 24px; color: #aaa; overflow: hidden; }
+.file-item:hover { background: var(--border-hover); }
+.file-icon { width: 40px; height: 40px; display: flex; justify-content: center; align-items: center; font-size: 24px; color: var(--text-secondary); overflow: hidden; }
 .thumb-img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
-.file-name { font-size: 10px; color: #ccc; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.file-name { font-size: 10px; color: var(--text-tertiary); width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
 .remove-btn { position: absolute; top: 2px; right: 2px; color: #FF453A; cursor: pointer; opacity: 0; font-size: 16px; }
 .file-item:hover .remove-btn { opacity: 1; }
 
 .split-area { flex: 1; display: flex; gap: 12px; align-items: center; overflow: hidden; min-height: 0; }
+
 .panel {
-  flex: 1; background: rgba(255, 255, 255, 0.05); border-radius: 12px;
+  flex: 1; 
+  border-radius: 12px;
   height: 100%; display: flex; flex-direction: column; overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid var(--border-main);
 }
+.left-panel { background: var(--bg-sidebar); } /* 左侧深色背景 */
+.right-panel { background: var(--bg-card); } /* 右侧卡片背景 */
 
 .panel-header-group {
-  padding: 10px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding: 10px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--border-main);
   display: flex; flex-direction: column; gap: 8px;
 }
 .filter-row { display: flex; gap: 6px; }
 .mini-select { flex: 1; }
 .panel-header-simple {
-  padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05);
-  font-weight: bold; color: #aaa;
+  padding: 12px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--border-main);
+  font-weight: bold; color: var(--text-tertiary);
 }
 
 .list-wrapper { flex: 1; overflow-y: auto; padding: 8px; }
@@ -526,24 +540,31 @@ const handleSave = async () => {
   padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; transition: all 0.2s;
 }
 .source-item { cursor: pointer; }
-.source-item:hover { background: rgba(255,255,255,0.1); }
+.source-item:hover { background: var(--border-hover); }
 
-.item-name { font-weight: 700; color: #fff; font-size: 15px; margin-bottom: 2px; }
+.item-name { font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px; }
 .item-sub { display: flex; gap: 6px; align-items: center; }
-.val-text { color: #888; font-size: 12px; }
-.sub-info { color: #888; font-size: 12px; }
-.dark-tag { background: rgba(255, 255, 255, 0.15); color: #ccc; }
+.val-text { color: var(--text-tertiary); font-size: 12px; }
+.sub-info { color: var(--text-tertiary); font-size: 12px; }
+.dark-tag { 
+  background: var(--border-main); 
+  color: var(--text-secondary); 
+}
 
-.bom-item { background: rgba(10, 132, 255, 0.1); border: 1px solid rgba(10, 132, 255, 0.2); }
+/* BOM 项样式：保持淡蓝色，文字自适应 */
+.bom-item { 
+  background: rgba(10, 132, 255, 0.1); 
+  border: 1px solid rgba(10, 132, 255, 0.2); 
+}
 .bom-info { display: flex; flex-direction: column; }
-.bom-name { color: #fff; font-size: 14px; font-weight: 600; }
-.sub-detail { color: #aaa; font-weight: normal; font-size: 13px; }
-.bom-pkg { color: #888; font-size: 12px; }
+.bom-name { color: var(--text-primary); font-size: 14px; font-weight: 600; }
+.sub-detail { color: var(--text-tertiary); font-weight: normal; font-size: 13px; }
+.bom-pkg { color: var(--text-tertiary); font-size: 12px; }
 
 .bom-ctrl { display: flex; align-items: center; gap: 8px; }
 .qty-input { width: 70px; }
-.x-text { color: #666; font-size: 12px; }
-.divider { color: #666; }
+.x-text { color: var(--text-tertiary); font-size: 12px; }
+.divider { color: var(--text-tertiary); }
 .footer { display: flex; justify-content: flex-end; gap: 12px; }
 .btn-save { padding: 0 24px; font-weight: bold; }
 </style>

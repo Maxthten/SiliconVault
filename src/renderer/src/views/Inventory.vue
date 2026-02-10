@@ -212,7 +212,7 @@ onMounted(() => { loadOptions(); loadData() })
     <div class="list-container">
       <n-spin :show="isLoading">
         <div v-if="sortedGroups.length === 0 && !isLoading" class="empty-state">
-          <n-icon size="48" :component="SettingsOutline" color="#444" />
+          <n-icon size="48" :component="SettingsOutline" class="empty-icon" />
           <p>暂无数据</p>
         </div>
 
@@ -233,7 +233,7 @@ onMounted(() => { loadOptions(); loadData() })
               @click="toggleCollapse(group)"
             >
               <div class="cat-info">
-                <n-icon :component="group.collapsed ? ChevronForward : ChevronDown" color="#888" />
+                <n-icon :component="group.collapsed ? ChevronForward : ChevronDown" class="cat-arrow" />
                 <span class="cat-title">{{ group.name }} <span class="cat-count">({{ group.items.length }})</span></span>
               </div>
             </div>
@@ -292,20 +292,53 @@ onMounted(() => { loadOptions(); loadData() })
 .toolbar {
   padding: 12px 16px; display: flex; gap: 12px; align-items: center;
   position: sticky; top: 0; z-index: 100;
-  background: rgba(28, 28, 30, 0.85); backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-sidebar); 
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-main);
 }
 .filter-group { display: flex; gap: 8px; width: 240px; }
 .mini-select { flex: 1; }
 .search-box { flex: 1; }
 .tools { display: flex; gap: 12px; }
 
+/* --- 输入框深度定制 --- */
+
+/* 强制覆盖 input 的颜色，解决亮色下文字太浅的问题 */
+:deep(.n-input .n-input__input-el),
+:deep(.n-base-selection-label) {
+  color: var(--text-primary) !important; /* 强制使用最深黑色 */
+  caret-color: var(--text-primary);
+}
+
+/* 覆盖 placeholder 颜色 */
+:deep(.n-input .n-input__placeholder),
+:deep(.n-base-selection-placeholder) {
+  color: var(--text-tertiary) !important;
+}
+
+/* 暗色模式背景：半透明灰 */
 :deep(.n-input), :deep(.n-base-selection-label) {
-  background-color: rgba(118, 118, 128, 0.24) !important; border: none !important; border-radius: 8px !important;
+  background-color: rgba(118, 118, 128, 0.24) !important; 
+  border: 1px solid transparent !important; 
+  border-radius: 8px !important;
+}
+
+/* 亮色模式背景：加深对比度，增加边框 */
+:global([data-theme="light"]) .toolbar :deep(.n-input),
+:global([data-theme="light"]) .toolbar :deep(.n-base-selection-label) {
+  background-color: rgba(0, 0, 0, 0.08) !important; /* 加深背景 */
+  border: 1px solid rgba(0, 0, 0, 0.05) !important; /* 增加边框 */
+}
+
+/* 悬停/聚焦时加深背景 */
+:global([data-theme="light"]) .toolbar :deep(.n-input:hover),
+:global([data-theme="light"]) .toolbar :deep(.n-input:focus-within) {
+  background-color: rgba(0, 0, 0, 0.12) !important;
 }
 
 .list-container { flex: 1; overflow-y: auto; padding: 20px; }
-.empty-state { text-align: center; color: #666; margin-top: 80px; }
+.empty-state { text-align: center; color: var(--text-tertiary); margin-top: 80px; }
+.empty-icon { color: var(--text-tertiary); }
 
 .category-group { margin-bottom: 24px; }
 .cat-header {
@@ -313,10 +346,12 @@ onMounted(() => { loadOptions(); loadData() })
   padding: 12px 8px; border-radius: 8px;
   cursor: pointer; user-select: none; transition: all 0.2s;
 }
-.cat-header.is-draggable:active { background: rgba(255,255,255,0.05); } 
+.cat-header.is-draggable:active { background: var(--border-hover); } 
 .cat-header.is-collapsed { opacity: 0.6; }
-.cat-info { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: #fff; }
-.cat-count { font-size: 14px; color: #666; font-weight: normal; }
+
+.cat-info { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.cat-count { font-size: 14px; color: var(--text-tertiary); font-weight: normal; }
+.cat-arrow { color: var(--text-tertiary); }
 
 .card-grid {
   display: grid;
@@ -333,9 +368,10 @@ onMounted(() => { loadOptions(); loadData() })
   animation: none !important; transform: scale(1.05) !important;
   z-index: 1000 !important; cursor: grabbing;
   box-shadow: 0 20px 40px rgba(0,0,0,0.5); border-radius: 16px;
-  background: rgba(45, 45, 50, 0.95);
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .ghost-item { opacity: 0; pointer-events: none; }
-.ghost-cat { opacity: 0.2; background: rgba(255,255,255,0.1); border-radius: 8px; }
+.ghost-cat { opacity: 0.2; background: var(--border-main); border-radius: 8px; }
 </style>

@@ -445,7 +445,7 @@ const handleConfirm = async () => {
 <style scoped>
 .conflict-modal {
   width: 900px;
-  background-color: #1c1c1e;
+  background-color: var(--bg-modal); 
   border-radius: 16px;
   overflow: hidden;
 }
@@ -454,38 +454,44 @@ const handleConfirm = async () => {
 
 .modal-header {
   padding: 20px 24px;
-  background: rgba(0,0,0,0.2);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-sidebar); 
+  border-bottom: 1px solid var(--border-main);
 }
-.header-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 8px; }
-.header-summary { font-size: 14px; color: #aaa; }
+.header-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: bold; color: var(--text-primary); margin-bottom: 8px; }
+.header-summary { font-size: 14px; color: var(--text-tertiary); }
 .highlight { color: #FF9F0A; font-size: 16px; margin: 0 4px; }
 .new-item-text { color: #30D158; }
 
 .modal-content { padding: 0; min-height: 400px; }
 :deep(.n-tabs-nav) { padding: 12px 24px 0 24px; }
 
-.conflict-list { padding: 16px 24px; background: #1c1c1e; }
-.batch-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; color: #888; font-size: 12px; }
+.conflict-list { padding: 16px 24px; background: var(--bg-modal); }
+.batch-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; color: var(--text-tertiary); font-size: 12px; }
 
 .empty-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 300px; color: #666; gap: 16px;
+  height: 300px; color: var(--text-tertiary); gap: 16px;
 }
 
 .conflict-row {
   display: flex; align-items: stretch; gap: 12px; margin-bottom: 16px;
-  background: rgba(255,255,255,0.02); padding: 12px; border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-card); 
+  border: 1px solid var(--border-main);
 }
 
 .card {
-  flex: 1; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 12px;
+  flex: 1; border-radius: 8px; padding: 12px;
   display: flex; flex-direction: column; gap: 6px; position: relative;
   border: 1px solid transparent;
 }
-.card.local { border-color: rgba(255,255,255,0.05); }
-.card.remote { border-color: rgba(10, 132, 255, 0.2); background: rgba(10, 132, 255, 0.05); }
+.card.local { 
+  border-color: var(--border-main);
+  background: var(--bg-sidebar); /* 本机卡片背景稍深 */
+}
+.card.remote { 
+  border-color: rgba(10, 132, 255, 0.2); 
+  background: rgba(10, 132, 255, 0.05); /* 资源包卡片保持淡蓝 */
+}
 
 .badges-container {
   position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
@@ -497,28 +503,29 @@ const handleConfirm = async () => {
 }
 .mini-badge.info { background: #0A84FF; color: white; }
 .mini-badge.warning { background: #FF9F0A; color: black; font-weight: bold; }
-.mini-badge.local-badge { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.1); color: #aaa; }
+.mini-badge.local-badge { position: absolute; top: 8px; right: 8px; background: var(--border-main); color: var(--text-tertiary); }
 
-.info-line { display: flex; align-items: center; gap: 6px; color: #fff; font-size: 14px; margin-top: 4px; }
-.detail-line { font-size: 12px; color: #888; }
+.info-line { display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 14px; margin-top: 4px; }
+.detail-line { font-size: 12px; color: var(--text-tertiary); }
 .stock { font-family: monospace; font-size: 13px; }
 .diff { color: #FF9F0A; font-weight: bold; }
 
 .decision-area {
   width: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
 }
-.arrow-icon { color: #444; font-size: 20px; opacity: 0.5; }
+.arrow-icon { color: var(--text-tertiary); font-size: 20px; opacity: 0.5; }
 
 .radio-group { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .radio-btn {
-  background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px;
+  background: var(--border-main); /* 默认按钮背景 */
+  padding: 8px 12px; border-radius: 8px;
   cursor: pointer; display: flex; flex-direction: column; align-items: flex-start;
   border: 1px solid transparent; transition: all 0.2s; position: relative;
 }
-.radio-btn span { font-size: 13px; color: #ccc; font-weight: bold; display: flex; align-items: center; gap: 6px; }
-.sub-tip { font-size: 10px; color: #666; margin-left: 20px; }
+.radio-btn span { font-size: 13px; color: var(--text-secondary); font-weight: bold; display: flex; align-items: center; gap: 6px; }
+.sub-tip { font-size: 10px; color: var(--text-tertiary); margin-left: 20px; }
 
-.radio-btn:hover { background: rgba(255,255,255,0.1); }
+.radio-btn:hover { background: var(--border-hover); }
 .radio-btn.active { background: rgba(48, 209, 88, 0.15); border-color: #30D158; }
 .radio-btn.active span { color: #30D158; }
 
@@ -527,10 +534,10 @@ const handleConfirm = async () => {
 
 .modal-footer {
   padding: 16px 24px;
-  background: rgba(0,0,0,0.2);
-  border-top: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border-main);
   display: flex; justify-content: space-between; align-items: center;
 }
-.footer-tip { font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; }
+.footer-tip { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
 .footer-btns { display: flex; gap: 12px; }
 </style>

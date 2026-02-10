@@ -31,13 +31,14 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
-    // 物理限制：预留 20px 缓冲空间 (900-20, 600-20)
     minWidth: 780,  
-    minHeight: 580, 
+    minHeight: 620, 
     show: false,
     autoHideMenuBar: true,
     title: 'SiliconVault',
     icon: icon,
+    titleBarStyle: 'hidden', // 兼容 macOS 样式
+    // -------------------------
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -124,6 +125,17 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  ipcMain.handle('window-control', (event, action) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    switch (action) {
+      case 'minimize': win.minimize(); break;
+      case 'maximize': win.isMaximized() ? win.unmaximize() : win.maximize(); break;
+      case 'close': win.close(); break;
+    }
+  })
+  // -----------------------
 
   // IPC 注册
   ipcMain.handle('get-categories', () => dbManager.fetchCategories())

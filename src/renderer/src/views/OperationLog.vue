@@ -244,7 +244,7 @@ onMounted(() => { loadLogs() })
       <n-spin :show="isLoading">
         
         <div v-if="filteredLogs.length === 0 && !isLoading" class="empty-state">
-          <n-icon size="64" :component="TimeOutline" color="#333" />
+          <n-icon size="64" :component="TimeOutline" class="empty-icon" />
           <p>没有找到相关记录</p>
         </div>
 
@@ -306,26 +306,57 @@ onMounted(() => { loadLogs() })
 .toolbar {
   padding: 12px 16px; display: flex; gap: 12px; align-items: center;
   position: sticky; top: 0; z-index: 100;
-  background: rgba(28, 28, 30, 0.85); backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+  background: var(--bg-sidebar); 
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-main);
 }
 .filter-group { width: 140px; flex-shrink: 0; }
 .search-box { flex: 1; }
+
 .title-badge { 
   display: flex; align-items: center; gap: 6px; 
   color: #0A84FF; font-weight: 800; font-size: 14px; 
   background: rgba(10, 132, 255, 0.1); padding: 4px 10px; border-radius: 12px;
 }
 
+/* --- 输入框深度定制 (复用 Inventory 逻辑) --- */
+:deep(.n-input .n-input__input-el),
+:deep(.n-base-selection-label) {
+  color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
+}
+:deep(.n-input .n-input__placeholder),
+:deep(.n-base-selection-placeholder) {
+  color: var(--text-tertiary) !important;
+}
+
+/* 暗色默认 */
 :deep(.n-input), :deep(.n-base-selection-label) {
-  background-color: rgba(118, 118, 128, 0.24) !important; border: none !important; border-radius: 8px !important;
+  background-color: rgba(118, 118, 128, 0.24) !important; 
+  border: 1px solid transparent !important; 
+  border-radius: 8px !important;
+}
+
+/* 亮色覆写 */
+:global([data-theme="light"]) .toolbar :deep(.n-input),
+:global([data-theme="light"]) .toolbar :deep(.n-base-selection-label) {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
 }
 
 .content { flex: 1; overflow-y: auto; padding: 20px 20px 100px 20px; }
-.empty-state { margin-top: 100px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: #666; }
+.empty-state { margin-top: 100px; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-tertiary); }
+.empty-icon { color: var(--text-tertiary); }
 
 .timeline-list { position: relative; max-width: 800px; margin: 0 auto; }
-.timeline-line { position: absolute; top: 10px; bottom: 0; left: 19px; width: 2px; background: rgba(255, 255, 255, 0.1); z-index: 0; }
+
+
+.timeline-line { 
+  position: absolute; top: 10px; bottom: 0; left: 19px; width: 2px; 
+  background: var(--border-main); 
+  z-index: 0; 
+}
 
 .timeline-item {
   display: flex; gap: 16px; margin-bottom: 16px; position: relative; z-index: 1;
@@ -334,27 +365,39 @@ onMounted(() => { loadLogs() })
 
 .time-node { flex-shrink: 0; width: 40px; display: flex; justify-content: center; }
 .dot {
-  width: 30px; height: 30px; background: #1c1c1e; border: 2px solid; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px rgba(0,0,0,0.5);
+  width: 30px; height: 30px; 
+  background: var(--bg-body); 
+  border: 2px solid; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; 
+  box-shadow: 0 0 0 4px rgba(0,0,0,0.05); /* 微弱光晕 */
 }
 
+
 .log-card {
-  flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.05);
+  flex: 1; 
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
   border-radius: 12px; padding: 12px 16px;
   display: flex; align-items: center; gap: 12px;
   transition: all 0.2s;
 }
-.log-card:hover { background: rgba(255, 255, 255, 0.08); transform: translateY(-2px); }
+.log-card:hover { 
+  background: var(--bg-card);
+  border-color: var(--border-hover); 
+  transform: translateY(-2px); 
+}
 
 .log-info { flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
 .log-header { display: flex; align-items: center; gap: 8px; }
 
 .op-tag {
   font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05); border: 1px solid;
+  background: var(--border-main); 
+  border: 1px solid;
 }
-.log-time { font-size: 12px; color: #666; font-family: monospace; }
-.log-desc { font-size: 14px; color: #ddd; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-time { font-size: 12px; color: var(--text-tertiary); font-family: monospace; }
+.log-desc { font-size: 14px; color: var(--text-primary); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .delta-display {
   display: flex; align-items: center; font-weight: 800; font-size: 16px; gap: 2px;
@@ -364,10 +407,10 @@ onMounted(() => { loadLogs() })
 
 .log-action {
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-  color: #666; border-radius: 8px; cursor: pointer; transition: all 0.2s;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-tertiary); border-radius: 8px; cursor: pointer; transition: all 0.2s;
+  background: var(--border-main);
 }
-.log-action:hover { color: #fff; background: rgba(255, 255, 255, 0.15); }
+.log-action:hover { color: var(--text-primary); background: var(--border-hover); }
 
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 

@@ -76,7 +76,6 @@ const handleExportLogs = async (e: Event) => {
 const handleDownloadCsvTemplate = async (e: Event) => {
   e.stopPropagation()
   try {
-    // 预置两行教科书级的示例数据，方便用户理解字段格式
     const templateData = [
       { 
         category: '电阻', 
@@ -115,11 +114,9 @@ const handleDownloadCsvTemplate = async (e: Event) => {
 const handleDownloadSvDataTemplate = async (e: Event) => {
   e.stopPropagation()
   try {
-    // 先让用户选择一个保存目录
     const folderPath = await window.api.selectFolder()
     if (!folderPath) return
 
-    // 简单的路径拼接，根据系统环境判断分隔符
     const separator = folderPath.includes('\\') ? '\\' : '/'
     const fullPath = `${folderPath}${separator}SiliconVault_Template.svdata`
 
@@ -139,20 +136,17 @@ const handleDownloadSvDataTemplate = async (e: Event) => {
   }
 }
 
-// 打开导出向导
 const openExportWizard = () => {
   exportWizardMode.value = 'inventory'
   showExportWizard.value = true
 }
 
-// 文件输入引用
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const triggerFileSelect = () => {
   fileInputRef.value?.click()
 }
 
-// 统一文件处理入口
 const handleFileChange = async (event: Event) => {
   const input = event.target as HTMLInputElement
   if (!input.files || input.files.length === 0) return
@@ -178,7 +172,6 @@ const handleFileChange = async (event: Event) => {
   }
 }
 
-// 处理资源包导入
 const handleBundleImport = async (path: string) => {
   isProcessing.value = true
   processingText.value = '正在解析资源包...'
@@ -295,7 +288,9 @@ const handleBundleImport = async (path: string) => {
 <style scoped>
 .data-center-page {
   padding: 40px; height: 100vh; display: flex; flex-direction: column;
-  background: transparent; color: #fff; box-sizing: border-box;
+  background: transparent; 
+  color: var(--text-primary); 
+  box-sizing: border-box;
 }
 .page-title { font-size: 28px; font-weight: 800; margin-bottom: 40px; letter-spacing: -0.5px; }
 
@@ -305,18 +300,23 @@ const handleBundleImport = async (path: string) => {
 }
 
 .action-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+ 
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
+  
   border-radius: 24px;
   position: relative; overflow: hidden;
   display: flex; flex-direction: column;
   cursor: pointer; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
+
 .action-card:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--bg-card); /* 保持背景，利用边框和位移做交互 */
+  border-color: var(--border-hover);
   transform: translateY(-5px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  /* 亮色模式下增加阴影深度 */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); 
 }
 
 .card-inner {
@@ -333,24 +333,24 @@ const handleBundleImport = async (path: string) => {
 .import-card .icon-box { background: rgba(48, 209, 88, 0.15); color: #30D158; }
 
 .text-content { flex: 1; }
-.title { font-size: 22px; font-weight: bold; margin-bottom: 8px; color: #fff; }
-.desc { font-size: 14px; color: #888; line-height: 1.5; }
+.title { font-size: 22px; font-weight: bold; margin-bottom: 8px; color: var(--text-primary); }
+.desc { font-size: 14px; color: var(--text-tertiary); line-height: 1.5; }
 
 .arrow {
-  font-size: 24px; color: #555; opacity: 0; transform: translateX(-20px); transition: all 0.3s;
+  font-size: 24px; color: var(--text-tertiary); opacity: 0; transform: translateX(-20px); transition: all 0.3s;
 }
-.action-card:hover .arrow { opacity: 1; transform: translateX(0); color: #fff; }
+.action-card:hover .arrow { opacity: 1; transform: translateX(0); color: var(--text-primary); }
 
 .card-footer {
   padding: 16px 40px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-main);
   display: flex; justify-content: flex-end;
 }
 .template-btns { display: flex; align-items: center; gap: 12px; }
-.divider { width: 1px; height: 12px; background: rgba(255,255,255,0.2); }
+.divider { width: 1px; height: 12px; background: var(--border-main); }
 
-.sub-btn { color: #666; transition: color 0.2s; }
-.sub-btn:hover { color: #ccc; }
+.sub-btn { color: var(--text-tertiary); transition: color 0.2s; }
+.sub-btn:hover { color: var(--text-primary); }
 
 .import-card { border-style: dashed; border-width: 2px; }
 .import-card:hover { border-color: #30D158; background: rgba(48, 209, 88, 0.05); }
@@ -358,7 +358,9 @@ const handleBundleImport = async (path: string) => {
 .loading-overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px;
-  background: rgba(28, 28, 30, 0.9); z-index: 10;
+
+  background: var(--bg-modal); 
+  z-index: 10;
 }
 
 @media (max-width: 800px) {

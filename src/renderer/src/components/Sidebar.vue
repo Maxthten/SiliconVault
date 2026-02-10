@@ -28,6 +28,7 @@ import {
   StatsChartOutline 
 } from '@vicons/ionicons5'
 import { NIcon, NTooltip } from 'naive-ui'
+import ThemeToggle from './ThemeToggle.vue' // 引入天空之窗组件
 
 const router = useRouter()
 const route = useRoute()
@@ -36,7 +37,7 @@ const route = useRoute()
 const warningLevel = ref(0)
 let timer: NodeJS.Timeout | null = null
 
-// 库存健康度检测
+// 库存健康度检测逻辑
 const checkHealth = async () => {
   const isSessionSnoozed = !!sessionStorage.getItem('replenish_snooze')
   const daySnooze = localStorage.getItem('replenish_snooze_until')
@@ -88,7 +89,9 @@ onUnmounted(() => {
 
 <template>
   <div class="sidebar">
-    <div class="logo">📦</div>
+    <div class="logo-area">
+      <div class="logo-box">📦</div>
+    </div>
     
     <div class="nav-group">
       <n-tooltip trigger="hover" placement="right">
@@ -158,6 +161,8 @@ onUnmounted(() => {
     </div>
 
     <div class="bottom-group">
+      <ThemeToggle />
+
       <n-tooltip trigger="hover" placement="right">
         <template #trigger>
           <div class="nav-item" :class="{ active: route.path === '/settings' }" @click="navigateTo('/settings')">
@@ -174,59 +179,109 @@ onUnmounted(() => {
 <style scoped>
 .sidebar { 
   width: 70px; 
-  background-color: #18181c; 
-  border-right: 1px solid rgba(255, 255, 255, 0.05); 
+  /* 必须是 100% 以适应父容器 */
+  height: 100%;
+  box-sizing: border-box;
+  
+  background-color: var(--bg-sidebar); 
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  
+  border-right: 1px solid var(--border-main); 
+  
   display: flex; 
   flex-direction: column; 
   align-items: center; 
-  padding: 20px 0; /* 上下留白 */
-  gap: 30px; 
+  padding: 20px 0 16px 0; 
+  gap: 0; 
   z-index: 100;
-  height: 100vh; /* 撑满高度 */
-  box-sizing: border-box;
+  
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-.logo { font-size: 24px; margin-bottom: 10px; cursor: default; }
+.logo-area {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.logo-box {
+  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--border-main);
+}
 
 .nav-group { 
   display: flex; 
   flex-direction: column; 
-  gap: 20px; 
+  gap: 18px; 
   width: 100%; 
   align-items: center; 
+  flex: 1; 
+  overflow-y: auto; 
+  scrollbar-width: none; 
 }
+.nav-group::-webkit-scrollbar { display: none; }
 
-/* 关键 CSS：将此容器顶到底部 */
 .bottom-group {
   margin-top: auto; 
+  flex-shrink: 0;
+  width: 100%;
+  
+  /* 使用 Flex 布局确保垂直排列和居中 */
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  width: 100%;
   align-items: center;
+  gap: 18px; /* 保持与上方导航一致的间距 */
 }
 
-/* 导航项样式保持不变 */
 .nav-item { 
   width: 44px; height: 44px; border-radius: 12px; 
   display: flex; justify-content: center; align-items: center; 
-  color: #666; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; 
+  color: var(--text-tertiary); 
+  cursor: pointer; 
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); 
+  position: relative; 
+  flex-shrink: 0;
 }
-.nav-item:hover { background-color: rgba(255, 255, 255, 0.1); color: #fff; }
-.nav-item.active { background-color: #0A84FF; color: #fff; box-shadow: 0 0 15px rgba(10, 132, 255, 0.4); }
+
+.nav-item:hover { 
+  background-color: var(--border-hover); 
+  color: var(--text-primary); 
+  transform: scale(1.05);
+}
+
+.nav-item.active { 
+  background-color: #0A84FF; 
+  color: #fff; 
+  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3);
+}
 
 .icon-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; }
 
-/* 警告样式 */
 .warning-item.is-yellow { color: #f2c97d; }
+:global([data-theme="light"]) .warning-item.is-yellow { color: #dda845; }
 .warning-item.is-yellow:hover { background: rgba(242, 201, 125, 0.15); }
-.warning-item.is-yellow.active { background: #f2c97d; color: #000; box-shadow: 0 0 15px rgba(242, 201, 125, 0.3); }
+.warning-item.is-yellow.active { background: #f2c97d; color: #000; box-shadow: 0 4px 12px rgba(242, 201, 125, 0.3); }
 
-.warning-item.is-red { color: #e88080; }
-.warning-item.is-red:hover { background: rgba(232, 128, 128, 0.15); }
-.warning-item.is-red.active { background: #e88080; color: #fff; box-shadow: 0 0 15px rgba(232, 128, 128, 0.4); }
+.warning-item.is-red { color: #ff5e57; }
+.warning-item.is-red:hover { background: rgba(255, 94, 87, 0.15); }
+.warning-item.is-red.active { background: #ff5e57; color: #fff; box-shadow: 0 4px 12px rgba(255, 94, 87, 0.4); }
 
-.dot { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background-color: currentColor; }
+.dot { 
+  position: absolute; top: 10px; right: 10px; 
+  width: 6px; height: 6px; 
+  border-radius: 50%; 
+  background-color: currentColor; 
+  box-shadow: 0 0 4px currentColor;
+}
 
 @keyframes shake {
   0% { transform: rotate(0deg); } 5% { transform: rotate(-10deg); } 10% { transform: rotate(10deg); } 15% { transform: rotate(-10deg); } 20% { transform: rotate(0deg); } 100% { transform: rotate(0deg); }

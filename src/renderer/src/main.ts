@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
-import router from './router' // 👈 别忘了导入这一行
-
+import router from './router' // 
+import './assets/base.css'
 const app = createApp(App)
-app.use(router) // 👈 别忘了挂载这一行
+app.use(router) // 
 app.mount('#app')

@@ -1,5 +1,23 @@
+<!-- 
+ * SiliconVault - Electronic Component Inventory Management System
+ * Copyright (C) 2026 Maxton Niu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  
+-->
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue' // 引入 onUnmounted
+import { ref, onMounted, onUnmounted, watch } from 'vue' 
 import { 
   NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NSpace, NAvatar, NDivider, NCard, NStatistic,
   NSwitch, NSelect, NInputNumber, NCollapseTransition
@@ -114,7 +132,6 @@ const init = async () => {
   }
 }
 
-// --- 关键优化：离开页面时清理所有消息 ---
 onUnmounted(() => {
   message.destroyAll()
 })
@@ -125,7 +142,6 @@ watch(() => uiSettings.value.transitionName, (newVal) => {
   localStorage.setItem('ui-transition', newVal)
   window.dispatchEvent(new Event('ui-transition-changed'))
   
-  // 优化：缩短提示时间，减少干扰
   message.success('切换动画已应用', { duration: 1500 })
 })
 
@@ -257,7 +273,7 @@ onMounted(init)
               :options="transitionOptions" 
               placeholder="选择切换动画"
             />
-            <div class="sub-label" style="margin-top: 5px; font-size: 12px; color: #666;">
+            <div class="sub-label">
               <n-icon :component="FlashOutline" style="vertical-align: middle; margin-right: 4px;" />
               决定页面切换时的视觉流畅度与速度
             </div>
@@ -340,7 +356,7 @@ onMounted(init)
 
         <n-collapse-transition :show="backupSettings.autoBackup">
           <div class="backup-body">
-            <n-divider style="margin: 10px 0 20px 0; opacity: 0.1;" />
+            <n-divider class="backup-divider" />
             
             <div class="form-grid">
               <div class="form-item">
@@ -350,7 +366,7 @@ onMounted(init)
                   :options="frequencyOptions" 
                   placeholder="选择频率"
                 />
-                <div class="sub-label" style="margin-top: 5px; font-size: 12px; color: #666;">
+                <div class="sub-label">
                   <n-icon :component="TimeOutline" style="vertical-align: middle; margin-right: 4px;" />
                   仅在数据发生变更时触发
                 </div>
@@ -364,7 +380,7 @@ onMounted(init)
                   :max="50"
                   button-placement="both"
                 />
-                <div class="sub-label" style="margin-top: 5px; font-size: 12px; color: #666;">
+                <div class="sub-label">
                   滚动删除旧备份，节省空间
                 </div>
               </div>
@@ -548,7 +564,7 @@ onMounted(init)
   padding: 40px 60px;
   height: 100%;
   box-sizing: border-box;
-  color: #fff;
+  color: var(--text-primary);
   max-width: 800px;
   margin: 0 auto;
   display: flex;
@@ -557,69 +573,72 @@ onMounted(init)
 
 .header { margin-bottom: 40px; }
 .title { font-size: 32px; font-weight: 800; margin: 0; letter-spacing: -1px; }
-.subtitle { font-size: 14px; color: #666; margin-top: 5px; }
+.subtitle { font-size: 14px; color: var(--text-tertiary); margin-top: 5px; }
 
 .section { margin-bottom: 20px; }
 .section-title { 
   display: flex; align-items: center; gap: 10px; 
-  font-size: 18px; font-weight: 600; color: #ddd; 
+  font-size: 18px; font-weight: 600; color: var(--text-primary); 
   margin-bottom: 20px; 
 }
 
 /* UI 设置面板 */
 .ui-panel {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
   border-radius: 12px;
   padding: 25px;
   transition: all 0.3s;
 }
 .ui-panel:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
+  border-color: var(--border-hover);
 }
 
-/* 路径卡片 */
+/* 路径卡片 - 终端风格容器 */
 .path-card {
-  background: #18181c;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 30px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 .path-header {
-  background: #252529;
+  background: var(--bg-sidebar); /* 侧栏色作为标题栏 */
   padding: 8px 15px;
   display: flex;
   align-items: center;
   gap: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-main);
 }
 .dot { width: 10px; height: 10px; border-radius: 50%; }
 .red { background: #ff5f56; }
 .yellow { background: #ffbd2e; }
 .green { background: #27c93f; }
-.path-label { margin-left: 10px; font-size: 12px; color: #666; font-family: monospace; }
+.path-label { margin-left: 10px; font-size: 12px; color: var(--text-tertiary); font-family: monospace; }
 .path-body {
   padding: 20px;
   font-family: 'JetBrains Mono', 'Menlo', monospace;
   font-size: 15px;
-  color: #0A84FF;
+  color: #0A84FF; /* 保持 accent color */
   word-break: break-all;
   line-height: 1.5;
 }
 .path-footer {
   padding: 10px 20px;
-  background: rgba(10, 132, 255, 0.05);
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border-main);
   font-size: 12px;
-  color: #888;
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.action-label { font-size: 13px; color: #888; margin-bottom: 8px; }
-.input-group { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.action-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: 8px; }
+.input-group { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
 .migrate-btn-wrapper { 
   max-height: 0; opacity: 0; overflow: hidden; 
   transition: all 0.4s ease;
@@ -629,21 +648,24 @@ onMounted(init)
 
 /* 备份面板样式 */
 .backup-panel {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
   border-radius: 12px;
   padding: 25px;
   transition: all 0.3s;
 }
 .backup-panel:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
+  border-color: var(--border-hover);
 }
 .backup-header {
   display: flex; justify-content: space-between; align-items: center;
 }
-.b-title { font-weight: bold; font-size: 15px; margin-bottom: 5px; }
-.b-desc { font-size: 13px; color: #888; }
+.b-title { font-weight: bold; font-size: 15px; margin-bottom: 5px; color: var(--text-primary); }
+.b-desc { font-size: 13px; color: var(--text-tertiary); }
 .backup-body { padding-top: 10px; }
+.backup-divider { margin: 10px 0 20px 0; opacity: 0.5; background-color: var(--border-main); }
 
 .form-grid {
   display: grid;
@@ -652,19 +674,26 @@ onMounted(init)
 }
 .form-item { display: flex; flex-direction: column; gap: 8px; }
 .form-item.full-width { grid-column: span 2; }
-.label { font-size: 13px; color: #ccc; font-weight: 500; }
+.label { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+.sub-label { margin-top: 5px; font-size: 12px; color: var(--text-tertiary); }
 
 /* 维护卡片网格 */
 .maintenance-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
 }
 .m-card {
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-card); 
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
   border-radius: 12px; padding: 20px;
   display: flex; flex-direction: column; gap: 15px; align-items: flex-start;
   transition: all 0.2s;
 }
-.m-card:hover { background: rgba(255,255,255,0.05); transform: translateY(-2px); }
+.m-card:hover { 
+  background: var(--bg-card);
+  border-color: var(--border-hover); 
+  transform: translateY(-2px); 
+}
 .m-icon {
   width: 40px; height: 40px; border-radius: 8px; 
   display: flex; align-items: center; justify-content: center; font-size: 20px;
@@ -672,12 +701,16 @@ onMounted(init)
 .m-icon.red { background: rgba(255, 69, 58, 0.1); color: #FF453A; }
 .m-icon.green { background: rgba(48, 209, 88, 0.1); color: #30D158; }
 .m-content { flex: 1; }
-.m-title { font-weight: bold; font-size: 15px; color: #eee; margin-bottom: 5px; }
-.m-desc { font-size: 12px; color: #888; line-height: 1.4; }
+.m-title { font-weight: bold; font-size: 15px; color: var(--text-primary); margin-bottom: 5px; }
+.m-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
 
 /* 扫描弹窗 */
 .scan-modal-content { padding: 10px 0; }
-.stat-panel { background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 20px; }
+.stat-panel { 
+  background: var(--bg-sidebar); 
+  border: 1px solid var(--border-main);
+  border-radius: 8px; margin-bottom: 20px; 
+}
 .stat-row { display: flex; justify-content: space-around; }
 .tip-box {
   padding: 12px; border-radius: 8px; font-size: 13px; display: flex; align-items: center; gap: 8px;
@@ -693,43 +726,45 @@ onMounted(init)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
   padding: 15px 20px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 .dev-info { display: flex; align-items: center; gap: 15px; }
-.dev-name { font-weight: bold; font-size: 15px; }
-.dev-desc { font-size: 12px; color: #666; }
+.dev-name { font-weight: bold; font-size: 15px; color: var(--text-primary); }
+.dev-desc { font-size: 12px; color: var(--text-tertiary); }
 
 .dev-actions { display: flex; gap: 10px; align-items: center; }
 
-.footer-divider { margin: 20px 0; background-color: rgba(255, 255, 255, 0.1); }
+.footer-divider { margin: 20px 0; background-color: var(--border-main); }
 
 .app-info {
-  text-align: center; color: #444; font-size: 12px;
+  text-align: center; color: var(--text-tertiary); font-size: 12px;
   display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
-.app-name { display: flex; align-items: center; gap: 6px; font-weight: bold; color: #666; font-size: 14px; }
+.app-name { display: flex; align-items: center; gap: 6px; font-weight: bold; color: var(--text-primary); font-size: 14px; }
 
 .license-declaration {
   margin-top: 8px;
   font-size: 10px;
-  color: #666;
+  color: var(--text-tertiary);
   line-height: 1.4;
   max-width: 300px;
   opacity: 0.8;
 }
 
-/* 通用弹窗 */
+/* 通用弹窗内容 */
 .modal-content { padding: 10px 0; }
 .path-compare { 
-  background: rgba(255,255,255,0.05); padding: 8px; 
-  border-radius: 6px; font-size: 12px; word-break: break-all; 
-  font-family: monospace;
+  background: var(--bg-sidebar); 
+  color: var(--text-primary);
+  padding: 8px; border-radius: 6px; font-size: 12px; word-break: break-all; 
+  font-family: monospace; border: 1px solid var(--border-main);
 }
-.path-compare.old { text-decoration: line-through; opacity: 0.6; }
+.path-compare.old { text-decoration: line-through; opacity: 0.6; color: var(--text-tertiary); }
 .path-compare.new { color: #0A84FF; border: 1px solid rgba(10, 132, 255, 0.3); }
-.arrow { text-align: center; margin: 5px 0; opacity: 0.5; }
+.arrow { text-align: center; margin: 5px 0; opacity: 0.5; color: var(--text-tertiary); }
 .warning { color: #f2c97d; font-size: 12px; margin-top: 15px; }
 </style>

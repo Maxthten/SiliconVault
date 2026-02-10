@@ -42,7 +42,7 @@ class MaintenanceManager {
 
   /**
    * 扫描未引用的资源文件
-   * 修复点：增加对文件夹不存在、权限不足的防御性处理
+   * 增加对文件夹不存在、权限不足的防御性处理
    */
   public scanUnusedAssets(): ScanResult {
     const db = dbManager.getDb()

@@ -36,7 +36,7 @@ export interface InventoryItem {
   min_stock?: number
   image_paths?: string 
   datasheet_paths?: string
-  ref_count?: number // 新增：被BOM引用的次数
+  ref_count?: number // 被BOM引用的次数
 }
 
 export interface BomProject {
@@ -576,7 +576,7 @@ class DBManager {
     return rows
   }
 
-  // 新增：获取指定元件关联的所有项目
+  // 获取指定元件关联的所有项目
   public getRelatedProjects(inventoryId: number): { id: number, name: string }[] {
     const sql = `
       SELECT p.id, p.name 

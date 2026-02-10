@@ -28,7 +28,7 @@ export interface InventoryItem {
   min_stock?: number
   image_paths?: string
   datasheet_paths?: string
-  ref_count?: number // 新增：引用计数
+  ref_count?: number
 }
 
 export interface BomItem {
@@ -85,6 +85,8 @@ export interface AppSettings {
 
 export interface ScanResult {
   scanId: string
+  success: boolean;
+  message?: string;
   meta: {
     version: string
     createdAt: number
@@ -154,9 +156,7 @@ declare global {
       upsertItem: (data: InventoryItem) => Promise<void>
 
       // --- BOM 项目管理 ---
-      // 修改：支持 query 字符串或 IDs 数组
       getProjects: (query?: string, ids?: number[]) => Promise<BomProject[]>
-      // 新增：获取关联项目
       getRelatedProjects: (id: number) => Promise<Array<{ id: number, name: string }>>
       
       getProjectDetail: (id: number) => Promise<BomItem[]>
@@ -184,7 +184,8 @@ declare global {
       readFileText: () => Promise<string | null>
       getAllInventoryExport: () => Promise<any[]>
       getAllProjectsExport: () => Promise<any[]>
-      batchImportInventory: (items: any[], mode: string) => Promise<{ success: number, skipped: number }>
+      // 修改：将 string 改为 ImportStrategy
+      batchImportInventory: (items: any[], mode: ImportStrategy) => Promise<{ success: number, skipped: number }>
       
       // --- 资源包全量导入导出 (.svdata) ---
       exportBundle: (options: { 
@@ -219,6 +220,7 @@ declare global {
       // --- 自动备份设置 ---
       getAppSettings: () => Promise<AppSettings>
       saveAppSettings: (settings: AppSettings) => Promise<void>
+      windowControl: (action: 'minimize' | 'maximize' | 'close') => Promise<void>
     }
   }
 }

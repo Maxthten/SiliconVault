@@ -234,11 +234,11 @@ const handleExportBundle = async () => {
       
       <div class="modal-header">
         <div class="title">
-          <n-icon size="22" :component="ArchiveOutline" color="#fff" />
+          <n-icon size="22" :component="ArchiveOutline" class="header-icon" />
           <span>导出向导</span>
         </div>
         <n-button text circle @click="emit('update:show', false)">
-          <n-icon size="20" :component="Close" />
+          <template #icon><n-icon size="20" :component="Close" class="close-icon" /></template>
         </n-button>
       </div>
 
@@ -286,7 +286,7 @@ const handleExportBundle = async () => {
               />
               <div class="item-info">
                 <div class="main-text">
-                  <n-tag v-if="item.category" size="small" :bordered="false" type="info" style="margin-right: 8px">
+                  <n-tag v-if="item.category" size="small" :bordered="false" class="cat-tag" style="margin-right: 8px">
                     {{ item.category }}
                   </n-tag>
                   {{ getItemDisplay(item).primary }} 
@@ -308,19 +308,10 @@ const handleExportBundle = async () => {
 
         <n-alert type="info" :show-icon="false" class="hint-box">
           <div v-if="activeTab === 'project'">
-            
-
-
-
-[Image of tree structure]
-
- <strong>智能关联：</strong> 导出资源包时，系统会自动打包项目关联的 BOM 元器件及其图片/手册。
+            <strong>智能关联：</strong> 导出资源包时，系统会自动打包项目关联的 BOM 元器件及其图片/手册。
           </div>
           <div v-else>
-            
-
-
- <strong>资源包 (.svdata)：</strong> 本质是 ZIP 压缩包，包含图片和文档，可被其他用户完整导入，也可改后缀为 .zip 解压查看。
+            <strong>资源包 (.svdata)：</strong> 本质是 ZIP 压缩包，包含图片和文档，可被其他用户完整导入。
           </div>
         </n-alert>
 
@@ -354,7 +345,8 @@ const handleExportBundle = async () => {
 <style scoped>
 .wizard-modal {
   width: 640px;
-  background-color: #1c1c1e;
+  /* 背景变量化 */
+  background-color: var(--bg-modal); 
   border-radius: 16px;
   overflow: hidden;
 }
@@ -363,10 +355,13 @@ const handleExportBundle = async () => {
 
 .modal-header {
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  /* 边框变量化 */
+  border-bottom: 1px solid var(--border-main);
   display: flex; justify-content: space-between; align-items: center;
 }
-.title { font-size: 17px; font-weight: bold; display: flex; align-items: center; gap: 10px; color: #fff; }
+.title { font-size: 17px; font-weight: bold; display: flex; align-items: center; gap: 10px; color: var(--text-primary); }
+.header-icon { color: var(--text-primary); }
+.close-icon { color: var(--text-tertiary); }
 
 .modal-content { padding: 20px 24px; }
 
@@ -374,31 +369,47 @@ const handleExportBundle = async () => {
 .search-wrap { flex: 1; }
 
 .list-box {
-  background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);
+  /* 使用侧边栏背景色，制造凹陷感 */
+  background: var(--bg-sidebar); 
+  border-radius: 8px; 
+  border: 1px solid var(--border-main);
   height: 300px; overflow: hidden;
 }
-.empty-hint { text-align: center; color: #666; margin-top: 40px; }
+.empty-hint { text-align: center; color: var(--text-tertiary); margin-top: 40px; }
 
 .list-item {
   display: flex; align-items: center; gap: 12px; padding: 10px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: background 0.2s;
+  border-bottom: 1px solid var(--border-main); 
+  cursor: pointer; transition: background 0.2s;
 }
-.list-item:hover { background: rgba(255,255,255,0.05); }
+.list-item:hover { background: var(--border-hover); }
+/* 选中状态：淡蓝背景 */
 .list-item.selected { background: rgba(10, 132, 255, 0.15); }
 
-.item-info { flex: 1; }
-.main-text { font-weight: bold; color: #fff; font-size: 14px; display: flex; align-items: center; }
-.sub-val { color: #aaa; font-weight: normal; margin-left: 4px; }
-.sub-text { font-size: 12px; color: #666; margin-top: 2px; }
+.item-info { flex: 1; overflow: hidden; }
+.main-text { font-weight: bold; color: var(--text-primary); font-size: 14px; display: flex; align-items: center; }
+.sub-val { color: var(--text-tertiary); font-weight: normal; margin-left: 4px; }
+.sub-text { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
-.status-bar { text-align: right; font-size: 12px; color: #aaa; margin-top: 8px; }
+.cat-tag {
+  background: var(--border-main);
+  color: var(--text-secondary);
+}
 
-.hint-box { font-size: 12px; color: #ccc; background: rgba(255,255,255,0.05); border: none; }
+.status-bar { text-align: right; font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+
+.hint-box { 
+  font-size: 12px; 
+  color: var(--text-secondary); 
+  background: var(--border-main); 
+  border: none; 
+}
 
 .modal-footer {
   padding: 16px 24px;
-  background: rgba(0,0,0,0.2);
-  border-top: 1px solid rgba(255,255,255,0.05);
+  /* 使用侧边栏背景，区分底部 */
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border-main);
   display: flex; justify-content: space-between; align-items: center;
 }
 </style>

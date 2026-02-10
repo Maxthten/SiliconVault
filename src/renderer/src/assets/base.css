@@ -1,4 +1,5 @@
 :root {
+  /* 原始色板 - 保持不变 */
   --ev-c-white: #ffffff;
   --ev-c-white-soft: #f8f8f8;
   --ev-c-white-mute: #f2f2f2;
@@ -21,14 +22,103 @@
   --ev-button-alt-hover-border: transparent;
   --ev-button-alt-hover-text: var(--ev-c-text-1);
   --ev-button-alt-hover-bg: var(--ev-c-gray-2);
+
+  /* --- 暗色模式 (默认) --- */
+  --bg-body: #000000;
+  --bg-app-gradient: linear-gradient(145deg, #101014 0%, #000000 100%);
+  --bg-sidebar: rgba(20, 20, 24, 0.8);
+  --bg-card: rgba(28, 28, 30, 0.6);
+  --bg-modal: #1c1c1e;
+  
+  --text-primary: rgba(255, 255, 245, 0.86);
+  --text-secondary: rgba(235, 235, 245, 0.6);
+  --text-tertiary: rgba(235, 235, 245, 0.38);
+
+  --border-main: rgba(255, 255, 255, 0.1);
+  --border-hover: rgba(255, 255, 255, 0.2);
+
+  /* 窗口最小尺寸提示 - 暗色模式 (已统一) */
+  /* 策略：高压钠灯风格 (与亮色模式参数对齐)
+     Blur: 20px (光晕紧凑)
+     Spread: 1px (实心红线描边)
+     Color: 使用适合暗色的红 (255, 69, 58)，透明度拉满 (1.0)
+  */
+  --limit-glow-style: inset 0 0 20px 1px rgba(255, 69, 58, 1.0);
+  
+  /* 关键投影 */
+  --shadow-card: none; 
+
+  /* 深黑凹槽感 */
+  --bg-qty-control: rgba(0, 0, 0, 0.4);       
+  --border-qty-control: 1px solid transparent; 
+  --shadow-qty-control: none;
+  
+  --rep-bg-red: rgba(232, 128, 128, 0.15);
+  --rep-border-red: 1px solid rgba(232, 128, 128, 0.3);
+  --rep-text-red: #ff8585;
+
+  --rep-bg-yellow: rgba(242, 201, 125, 0.15);
+  --rep-border-yellow: 1px solid rgba(242, 201, 125, 0.3);
+  --rep-text-yellow: #f2c97d;
+
+  --rep-bg-sleep: rgba(255, 255, 255, 0.05);
+  --rep-divider: 1px solid transparent; 
 }
 
-:root {
-  --color-background: var(--ev-c-black);
-  --color-background-soft: var(--ev-c-black-soft);
-  --color-background-mute: var(--ev-c-black-mute);
+/* --- 亮色模式 (重构版) --- */
+[data-theme="light"] {
+  /* 背景压暗 */
+  --bg-body: #F0F0F2; 
+  --bg-app-gradient: linear-gradient(180deg, #F0F0F2 0%, #F5F5F7 100%);
+  
+  /* 侧边栏 */
+  --bg-sidebar: rgba(255, 255, 255, 0.75);
+  
+  /* 卡片 */
+  --bg-card: #FFFFFF;
+  --bg-modal: #FFFFFF;
 
-  --color-text: var(--ev-c-text-1);
+  /* 文字 */
+  --text-primary: #111111; 
+  --text-secondary: #3C3C43; 
+  --text-tertiary: #8E8E93;
+
+  /* 边框 */
+  --border-main: rgba(0, 0, 0, 0.12);
+  --border-hover: rgba(0, 0, 0, 0.25);
+
+  /* 窗口最小尺寸提示 - 亮色模式 */
+  /* 策略：高压钠灯风格
+     Blur: 20px 
+     Spread: 1px 
+     Color: 适合亮色的红 (255, 59, 48)，透明度拉满
+  */
+  --limit-glow-style: inset 0 0 20px 1px rgba(255, 59, 48, 1.0);
+  
+  /* 关键投影 */
+  --shadow-card: 
+    0 1px 2px rgba(0, 0, 0, 0.06), 
+    0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* 纯白悬浮风 */
+  --bg-qty-control: #FFFFFF;
+  --border-qty-control: 1px solid rgba(0, 0, 0, 0.08);
+  --shadow-qty-control: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  --rep-bg-red: #FFEEEE;           
+  --rep-border-red: 1px solid #C7C7CC; 
+  --rep-text-red: #D32F2F;         
+
+  /* 黄色警告区域 */
+  --rep-bg-yellow: #FFF8E6;        
+  --rep-border-yellow: 1px solid #C7C7CC; 
+  --rep-text-yellow: #B76E00;      
+
+  /* 休眠状态 */
+  --rep-bg-sleep: #F2F2F7;         
+
+  /* 列表分界线 */
+  --rep-divider: 1px solid #E5E5EA; 
 }
 
 *,
@@ -45,8 +135,9 @@ ul {
 
 body {
   min-height: 100vh;
-  color: var(--color-text);
-  background: var(--color-background);
+  color: var(--text-primary);
+  background: var(--bg-body);
+  transition: background 0.3s ease;
   line-height: 1.6;
   font-family:
     Inter,

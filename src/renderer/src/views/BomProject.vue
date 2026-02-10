@@ -1,20 +1,3 @@
-<!--
- * SiliconVault - Electronic Component Inventory Management System
- * Copyright (C) 2026 Maxton Niu
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
--->
 <script setup lang="ts">
 import { ref, watch, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -46,7 +29,6 @@ const isDragging = ref(false)
 // 关联筛选状态
 const isFilterMode = ref(false)
 const filterIds = ref<number[]>([])
-// 缓存项目名称，用于在胶囊上显示 { id: name }
 const projectNamesMap = ref(new Map<number, string>())
 
 const showEdit = ref(false)
@@ -59,19 +41,14 @@ const loadProjects = async () => {
   try {
     let result: any[] = []
     
-    // 优先处理 ID 列表筛选
     if (isFilterMode.value && filterIds.value.length > 0) {
-      // 修复：使用 [...filterIds.value] 创建纯数组，避免 Proxy 克隆错误
-      // 同时传入 searchQuery，支持在过滤结果中二次搜索
       result = await window.api.getProjects(searchQuery.value, [...filterIds.value])
     } else {
-      // 普通搜索模式
       result = await window.api.getProjects(searchQuery.value)
     }
 
     projects.value = result
 
-    // 自动更新名称缓存 (确保胶囊显示正确的名字)
     result.forEach(p => {
       if (p.id && p.name) {
         projectNamesMap.value.set(p.id, p.name)
@@ -86,14 +63,12 @@ const loadProjects = async () => {
   }
 }
 
-// 监听路由参数变化
 watch(
   () => route.query,
   (newQuery) => {
     if (newQuery.ids) {
       isFilterMode.value = true
       filterIds.value = String(newQuery.ids).split(',').map(Number)
-      // 注意：这里不应该清空 searchQuery，允许用户在过滤结果中继续搜
     } else {
       isFilterMode.value = false
       filterIds.value = []
@@ -103,26 +78,21 @@ watch(
   { immediate: true }
 )
 
-// 移除单个过滤器 (点击胶囊上的 x)
 const removeFilterId = (idToRemove: number) => {
   const newIds = filterIds.value.filter(id => id !== idToRemove)
   
   if (newIds.length > 0) {
-    // 更新路由，触发 watch 自动刷新
     router.replace({ query: { ...route.query, ids: newIds.join(',') } })
   } else {
-    // 如果没有 ID 了，就退出过滤模式
     clearAllFilters()
   }
 }
 
-// 清除所有过滤器 (点击右侧 x 或清空按钮)
 const clearAllFilters = () => {
   searchQuery.value = ''
-  router.replace({ query: {} }) // 清空路由参数
+  router.replace({ query: {} }) 
 }
 
-// 获取项目名称 (用于胶囊显示)
 const getProjectName = (id: number) => {
   return projectNamesMap.value.get(id) || `项目 #${id}`
 }
@@ -331,28 +301,45 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 .toolbar {
   padding: 12px 16px; display: flex; gap: 12px; align-items: center;
   position: sticky; top: 0; z-index: 100;
-  background: rgba(28, 28, 30, 0.85); backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  /*使用变量背景 */
+  background: var(--bg-sidebar); 
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-main);
 }
 .search-box { flex: 1; display: flex; align-items: center; }
 
 .tools { display: flex; gap: 12px; }
 
-/* 令牌化输入框样式 */
+/* 令牌化输入框样式 - 适配亮色模式 */
 :deep(.n-input) { 
   background-color: rgba(118, 118, 128, 0.24) !important; 
   border: none !important; 
   border-radius: 8px !important; 
-  padding-left: 4px !important; /* 给左侧胶囊留空间 */
+  padding-left: 4px !important;
 }
 :deep(.n-input:hover), :deep(.n-input:focus-within) { 
   background-color: rgba(118, 118, 128, 0.35) !important; 
 }
 
+/* 亮色模式下输入框优化 */
+:global([data-theme="light"]) .toolbar :deep(.n-input),
+:global([data-theme="light"]) .toolbar :deep(.n-base-selection-label) {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+:global([data-theme="light"]) .toolbar :deep(.n-input:hover),
+:global([data-theme="light"]) .toolbar :deep(.n-input:focus-within) {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 强制文字颜色 */
+:deep(.n-input .n-input__input-el) { color: var(--text-primary) !important; }
+:deep(.n-input .n-input__placeholder) { color: var(--text-tertiary) !important; }
+
 /* 胶囊容器 */
 .chip-container {
   display: flex; 
-  gap: 6px; /* 增加呼吸感 */
+  gap: 6px; 
   align-items: center; 
   margin-right: 6px;
   padding: 2px 0;
@@ -361,96 +348,111 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 }
 .chip-container::-webkit-scrollbar { display: none; }
 
-/* --- 🌟 高级感胶囊样式 (iOS Tint Style) --- */
+/* iOS 风格胶囊 - 颜色保持蓝色调 */
 .ios-chip {
-  /* 背景：iOS 风格的半透明色调 (Tinted) */
   background: rgba(10, 132, 255, 0.15) !important; 
-  /* 文字：深蓝色，高对比度 */
   color: #0A84FF !important; 
   font-weight: 600;
   font-size: 12px;
   height: 24px;
   padding: 0 10px;
-  border: none !important; /* 移除默认边框 */
+  border: none !important; 
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
 }
 
-/* 悬浮时的微光效果 */
 .ios-chip:hover {
   background: rgba(10, 132, 255, 0.25) !important;
   transform: translateY(-0.5px);
 }
 
-/* 深度定制关闭按钮 (核心质感来源) */
 :deep(.n-tag__close) {
   margin-left: 6px !important;
   font-size: 14px !important;
-  color: rgba(10, 132, 255, 0.6) !important; /* 默认半透明蓝 */
-  
-  /* 构造圆形热区 */
-  border-radius: 50%;
-  width: 16px; 
-  height: 16px;
+  color: rgba(10, 132, 255, 0.6) !important;
+  border-radius: 50%; width: 16px; height: 16px;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.2s ease;
 }
 
-/* 关闭按钮悬浮交互：变成实心深蓝圆点 */
 :deep(.n-tag__close:hover) {
   background-color: #0A84FF !important;
   color: #fff !important;
   transform: scale(1.1);
 }
 
-/* 列表动画 */
 .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: scale(0.8); width: 0; margin-right: 0; }
 
-.search-icon { margin-left: 8px; color: #888; }
+.search-icon { margin-left: 8px; color: var(--text-tertiary); }
 
 .content { flex: 1; overflow-y: auto; padding: 20px; }
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
 
+/* 项目卡片核心 */
 .project-card {
-  background: rgba(255,255,255,0.05); border-radius: 16px; padding: 16px;
-  border: 1px solid rgba(255,255,255,0.05);
+  background: var(--bg-card); /* 变量化背景 */
+  border-radius: 16px; padding: 16px;
+  border: 1px solid var(--border-main); /* 变量化边框 */
+  box-shadow: var(--shadow-card); /* 亮色模式增加阴影 */
   transition: all 0.2s; position: relative; z-index: 1; user-select: none; cursor: pointer;
   display: flex; flex-direction: column; gap: 10px;
 }
-.project-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); }
-.project-card.is-draggable { cursor: grab; border-style: dashed; border-color: rgba(255,255,255,0.15); }
+.project-card:hover { 
+  background: var(--bg-card);
+  border-color: var(--border-hover); 
+  transform: translateY(-2px);
+}
+.project-card.is-draggable { cursor: grab; border-style: dashed; border-color: var(--border-hover); }
 
 /* 头部布局 */
 .card-header-row { display: flex; justify-content: space-between; align-items: flex-start; }
 .header-left { flex: 1; min-width: 0; }
-.p-name { font-size: 17px; font-weight: bold; color: #fff; margin-bottom: 4px; }
-.p-date { font-size: 12px; color: #666; display: flex; align-items: center; gap: 4px; }
+.p-name { font-size: 17px; font-weight: bold; color: var(--text-primary); margin-bottom: 4px; }
+.p-date { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
 .header-right-media { display: flex; gap: 10px; align-items: center; }
+
 .thumb-section { width: 44px; height: 44px; flex-shrink: 0; cursor: zoom-in; }
-.cover-wrapper { width: 100%; height: 100%; position: relative; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.15); }
+.cover-wrapper { width: 100%; height: 100%; position: relative; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid var(--border-main); }
 .cover-img { width: 100%; height: 100%; object-fit: cover; }
 .count-badge { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.7); color: white; font-size: 9px; padding: 1px 4px; border-top-left-radius: 4px; }
+
 .doc-section { display: flex; align-items: center; }
-.doc-trigger { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s; }
+.doc-trigger { 
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; 
+  background: var(--border-main); /* 文档按钮背景变量化 */
+  border-radius: 8px; border: 1px solid transparent; transition: all 0.2s; 
+}
 .doc-trigger.clickable { cursor: pointer; }
-.doc-trigger.clickable:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+.doc-trigger.clickable:hover { background: var(--border-hover); transform: scale(1.05); }
 .multi { gap: 2px; }
-.doc-count { font-size: 10px; font-weight: bold; margin-top: 2px; color: #ddd; }
+.doc-count { font-size: 10px; font-weight: bold; margin-top: 2px; color: var(--text-secondary); }
+
 .preview-popover { background: #000; }
 .carousel-item { width: 100%; height: 100%; position: relative; cursor: pointer; display: flex; justify-content: center; align-items: center; }
 .carousel-img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .carousel-hint { position: absolute; bottom: 10px; background: rgba(0,0,0,0.6); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
 .carousel-item:hover .carousel-hint { opacity: 1; }
-.p-desc { font-size: 13px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
-.card-actions { margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); }
+
+.p-desc { font-size: 13px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
+.card-actions { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border-main); }
+
 .mode-run, .mode-manage { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .run-btn { font-weight: bold; width: 100%; }
 .manage-btns { display: flex; gap: 10px; }
-.drag-hint { font-size: 12px; color: #666; display: flex; align-items: center; gap: 4px; }
+.drag-hint { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
+
 @keyframes jiggle { 0% { transform: rotate(0deg); } 25% { transform: rotate(-0.8deg); } 75% { transform: rotate(0.8deg); } 100% { transform: rotate(0deg); } }
 .is-shaking { animation: jiggle 0.28s infinite ease-in-out; }
-.drag-active { animation: none !important; transform: scale(1.05) !important; background: rgba(45, 45, 50, 0.98); border: 1px solid #0A84FF; z-index: 1000 !important; cursor: grabbing; }
+
+/* 拖拽态 */
+.drag-active { 
+  animation: none !important; transform: scale(1.05) !important; 
+  background: var(--bg-card); 
+  color: var(--text-primary);
+  border: 1px solid #0A84FF; z-index: 1000 !important; cursor: grabbing; 
+}
 .ghost { opacity: 0; background: transparent; border: none; pointer-events: none; }
+
 @media (max-width: 768px) { .toolbar { padding: 12px 16px; } .content { padding: 16px; } .project-grid { grid-template-columns: 1fr; } }
 </style>

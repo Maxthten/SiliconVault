@@ -131,7 +131,6 @@ const handleRefMouseEnter = async () => {
   }
 }
 
-// 跳转到 BOM 页面并过滤 ID
 const navigateToProject = (proj: { id: number, name: string }) => {
   router.push({ 
     name: 'Bom', 
@@ -139,7 +138,6 @@ const navigateToProject = (proj: { id: number, name: string }) => {
   })
 }
 
-// 跳转到 BOM 页面并过滤 ID 列表
 const navigateToAllRefs = () => {
   const ids = relatedProjects.value.map(p => p.id).join(',')
   router.push({ 
@@ -322,8 +320,8 @@ const getStockColor = (qty: number, min: number) => {
 
 <style scoped>
 .card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
   border-radius: 16px;
   padding: 10px 16px;
   display: flex;
@@ -332,16 +330,22 @@ const getStockColor = (qty: number, min: number) => {
   min-height: 72px; 
   box-sizing: border-box;
   gap: 16px;
-  transition: background 0.2s;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: var(--shadow-card);
 }
-.card:hover { background: rgba(255, 255, 255, 0.08); }
 
-/* 左侧缩略图 */
+.card:hover { 
+  background: var(--bg-card);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+
 .thumb-section { width: 48px; height: 48px; flex-shrink: 0; cursor: zoom-in; }
 .cover-wrapper {
   width: 100%; height: 100%; position: relative;
   border-radius: 8px; overflow: hidden;
-  background: #000; border: 1px solid rgba(255,255,255,0.1);
+  background: #000;
+  border: 1px solid var(--border-main);
 }
 .cover-img { width: 100%; height: 100%; object-fit: cover; }
 .count-badge {
@@ -361,7 +365,6 @@ const getStockColor = (qty: number, min: number) => {
 }
 .carousel-item:hover .carousel-hint { opacity: 1; }
 
-/* 中间布局 */
 .info-section {
   flex: 1; display: flex; flex-direction: column; justify-content: center;
   gap: 4px; overflow: hidden;
@@ -373,13 +376,17 @@ const getStockColor = (qty: number, min: number) => {
 
 .slot-item { display: flex; align-items: center; max-width: 100%; }
 
-.value-text { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.name-text { font-size: 13px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta-text { font-size: 12px; color: #aaa; display: flex; align-items: center; gap: 4px; }
-.location-text { font-size: 12px; color: #666; display: flex; align-items: center; gap: 4px; }
+.value-text { font-size: 18px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name-text { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta-text { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
+.location-text { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
 
-.pkg-tag { background: rgba(255,255,255,0.1); color: #aaa; font-size: 10px; height: 18px; line-height: 18px; padding: 0 6px; border-radius: 4px; }
-.pkg-tag-large { font-size: 16px; font-weight: 700; color: #fff; }
+.pkg-tag { 
+  background: var(--border-main);
+  color: var(--text-secondary); 
+  font-size: 10px; height: 18px; line-height: 18px; padding: 0 6px; border-radius: 4px; 
+}
+.pkg-tag-large { font-size: 16px; font-weight: 700; color: var(--text-primary); }
 
 .doc-trigger { display: flex; align-items: center; }
 .clickable { cursor: pointer; transition: transform 0.2s; }
@@ -388,10 +395,8 @@ const getStockColor = (qty: number, min: number) => {
 .multi-doc-icon { color: #409CFF; font-size: 18px; display: flex; align-items: center; gap: 2px; }
 .doc-count { font-size: 10px; font-weight: bold; margin-top: 2px; }
 
-/* 右侧操作区 */
 .action-section { display: flex; align-items: center; gap: 12px; }
 
-/* 关联项目胶囊样式 */
 .ref-badge {
   display: flex; align-items: center; gap: 4px;
   background: rgba(10, 132, 255, 0.15);
@@ -404,42 +409,34 @@ const getStockColor = (qty: number, min: number) => {
 }
 .ref-badge:hover { background: rgba(10, 132, 255, 0.25); }
 
-/* --- 🌟 哑光悬浮卡片样式 (Matte Floating) --- */
 .ref-popover-content { 
   width: 220px; 
-  /* 哑光深黑背景，不透明 */
-  background: #1C1C1E; 
-  
-  /* 极细微光描边 */
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-modal);
+  border: 1px solid var(--border-main);
   border-radius: 16px;
-  
-  /* 柔和弥散投影 */
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   padding: 4px 0;
   display: flex;
   flex-direction: column;
-  color: #EBEBF5; /* iOS 标准文本色 */
+  color: var(--text-primary);
 }
 
 .ref-header {
   padding: 12px 16px; 
-  /* 移除边框，保留间距 */
   border-bottom: 1px solid transparent;
   font-size: 12px; 
   font-weight: 600;
-  color: rgba(235, 235, 245, 0.6); 
+  color: var(--text-tertiary);
   display: flex; 
   justify-content: space-between;
   align-items: center;
 }
 
 .ref-total { 
-  background: rgba(255, 255, 255, 0.1); 
+  background: var(--border-main);
   padding: 2px 8px; 
   border-radius: 10px; 
-  color: #fff; 
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
@@ -448,11 +445,11 @@ const getStockColor = (qty: number, min: number) => {
 .ref-list { 
   max-height: 200px; 
   overflow-y: auto; 
-  margin: 2px 4px; /* 留出边距，让悬停块不贴边 */
+  margin: 2px 4px; 
 }
 
 .ref-list::-webkit-scrollbar { width: 4px; }
-.ref-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.ref-list::-webkit-scrollbar-thumb { background: var(--border-main); border-radius: 2px; }
 
 .ref-item {
   padding: 10px 12px; 
@@ -461,18 +458,17 @@ const getStockColor = (qty: number, min: number) => {
   align-items: center;
   cursor: pointer; 
   transition: all 0.1s; 
-  border-radius: 8px; /* 圆角悬停块 */
+  border-radius: 8px; 
   margin-bottom: 2px;
 }
 
-/* 悬停交互：整齐的浅灰色块 */
 .ref-item:hover { 
-  background: rgba(255, 255, 255, 0.06); 
+  background: var(--border-hover);
 }
 
 .proj-name { 
   font-size: 13px; 
-  color: #EBEBF5; 
+  color: var(--text-primary);
   white-space: nowrap; 
   overflow: hidden; 
   text-overflow: ellipsis; 
@@ -481,7 +477,7 @@ const getStockColor = (qty: number, min: number) => {
 
 .arrow-icon { 
   font-size: 14px; 
-  color: rgba(235, 235, 245, 0.3); 
+  color: var(--text-tertiary);
 }
 
 .ref-footer {
@@ -491,20 +487,34 @@ const getStockColor = (qty: number, min: number) => {
   font-size: 12px; 
   font-weight: 600;
   cursor: pointer; 
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-main);
   margin-top: 4px;
 }
 
 .ref-footer:hover { 
-  background: rgba(255, 255, 255, 0.03); 
+  background: var(--border-hover);
 }
 
+/* 统一管理：直接引用 base.css 定义好的变量 */
 .qty-control {
   display: flex; align-items: center; gap: 8px;
-  background: rgba(0,0,0,0.2); padding: 4px; border-radius: 20px;
+  
+  /* 核心修改：使用变量，不再自己写颜色 */
+  background: var(--bg-qty-control);
+  border: var(--border-qty-control);
+  box-shadow: var(--shadow-qty-control);
+  
+  padding: 4px; border-radius: 20px;
   transition: all 0.2s;
 }
-.qty-control.is-readonly { background: transparent; padding: 0; }
+
+.qty-control.is-readonly { 
+  background: transparent; 
+  border-color: transparent; 
+  box-shadow: none; 
+  padding: 0; 
+}
+
 .qty-display { font-size: 16px; font-weight: bold; min-width: 24px; text-align: center; }
 .qty-btn { width: 28px; height: 28px; }
 .manage-control { display: flex; gap: 10px; }

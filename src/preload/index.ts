@@ -1,25 +1,46 @@
 /*
  * SiliconVault - Electronic Component Inventory Management System
  * Copyright (C) 2026 Maxton Niu
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
+// 导入策略类型
+export type ImportStrategy = 'overwrite' | 'skip' | 'keep_both'
+
+// 扫描结果接口
+export interface ScanResult {
+  scanId: string
+  success: boolean
+  message?: string
+  stats?: {
+    total: number
+    conflicts: number
+    inserts: number
+  }
+  conflicts: {
+    inventory: Array<{
+      local: any
+      remote: any
+      hasFileDiff?: boolean
+    }>
+    projects: Array<{
+      local: any
+      remote: any
+      hasFileDiff?: boolean
+    }>
+  }
+  newItems: {
+    inventory: number
+    projects: number
+  }
+}
+
 // 自定义 API
 const api = {
+  // --- 0. 窗口控制 ---
+  windowControl: (action: 'minimize' | 'maximize' | 'close') => ipcRenderer.invoke('window-control', action),
+
   // --- 1. 库存管理 ---
   fetchCategories: () => ipcRenderer.invoke('get-categories'),
   fetchPackages: (category) => ipcRenderer.invoke('get-packages', category),
@@ -29,11 +50,8 @@ const api = {
   upsertItem: (data) => ipcRenderer.invoke('upsert-item', data),
 
   // --- 2. BOM 项目 ---
-  // 修改：支持 query 和 ids 两个参数
   getProjects: (query, ids) => ipcRenderer.invoke('get-projects', { query, ids }),
-  // 新增：获取关联项目
   getRelatedProjects: (id) => ipcRenderer.invoke('get-related-projects', id),
-  
   getProjectDetail: (id) => ipcRenderer.invoke('get-project-detail', id),
   saveProject: (project) => ipcRenderer.invoke('save-project', project),
   deleteProject: (id) => ipcRenderer.invoke('delete-project', id),
@@ -99,66 +117,4 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   // @ts-ignore
   window.api = api
-}
-
-export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
-
-export interface InventoryItem {
-  id?: number
-  category: string
-  name: string
-  value: string
-  package: string
-  quantity: number
-  location: string
-  min_stock?: number
-  image_paths?: string
-  datasheet_paths?: string
-  ref_count?: number
-}
-
-export interface BomItem {
-  inventory_id: number
-  quantity: number
-  name?: string
-  value?: string
-  package?: string
-  category?: string
-  current_stock?: number
-}
-
-export interface BomProject {
-  id?: number
-  name: string
-  description: string
-  created_at?: string
-  items?: BomItem[]
-  order_index?: number
-  files?: string
-}
-
-export interface ScanResult {
-  scanId: string
-  meta: {
-    version: string
-    createdAt: number
-    inventory: InventoryItem[]
-    projects: BomProject[]
-    projectItems: any[]
-  }
-  conflicts: {
-    inventory: Array<{ local: InventoryItem, remote: InventoryItem, hasFileDiff?: boolean }>
-    projects: Array<{ local: BomProject, remote: BomProject, hasFileDiff?: boolean }>
-  }
-  newItems: {
-    inventory: number
-    projects: number
-  }
-}
-
-export interface AppSettings {
-  autoBackup: boolean
-  backupFrequency: 'exit' | '30min' | '1h' | '4h'
-  backupPath: string
-  maxBackups: number
 }

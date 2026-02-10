@@ -19,7 +19,7 @@
 import { ref, computed, watch } from 'vue'
 import { 
   NModal, NInput, NButton, NIcon, NScrollbar, NInputNumber, 
-  NTag, useMessage, useDialog, NSelect // 引入 useDialog
+  NTag, useMessage, useDialog, NSelect 
 } from 'naive-ui'
 import { 
   Search, Add, ArrowForward, TrashOutline, 
@@ -51,7 +51,7 @@ const props = defineProps<Props>()
 const emit = defineEmits(['update:show', 'refresh'])
 
 const message = useMessage()
-const dialog = useDialog() // 🔥 初始化对话框
+const dialog = useDialog()
 const isLoading = ref(false)
 
 // 状态
@@ -70,23 +70,20 @@ const filteredSourceList = computed(() => {
   
   // 1. 过滤逻辑
   const result = list.filter(item => {
-    // 排除已选
     if (selectedIds.has(item.id)) return false
     
-    // 关键词搜索
     const keyword = searchQuery.value.toLowerCase().trim()
     const matchSearch = !keyword || 
       (item.name || '').toLowerCase().includes(keyword) || 
       (item.value || '').toLowerCase().includes(keyword) ||
       (item.package || '').toLowerCase().includes(keyword)
       
-    // 分类筛选
     const matchCat = !filterCategory.value || item.category === filterCategory.value
     
     return matchSearch && matchCat
   })
 
-  // 2. 🔥 截断显示：只显示前 100 条，防止渲染几千个 DOM 卡死
+  // 2. 🔥 截断显示：只显示前 100 条
   return result.slice(0, 100)
 })
 
@@ -136,7 +133,6 @@ const executeBatchUpdate = async () => {
       if (item.mode === 'add') {
         newQty += item.delta
       } else {
-        // 📉 允许减到负数 (透支模式)
         newQty -= item.delta 
       }
       return window.api.updateQty(item.id, newQty)
@@ -159,14 +155,12 @@ const executeBatchUpdate = async () => {
 const handleCheckAndExecute = () => {
   if (selectedList.value.length === 0) return
 
-  // 1. 找出所有会变成负数（或更负）的危险操作
   const riskyItems = selectedList.value.filter(item => {
-    if (item.mode === 'add') return false // 加库存没事
+    if (item.mode === 'add') return false 
     const predictedQty = item.quantity - item.delta
     return predictedQty < 0
   })
 
-  // 2. 如果有风险，弹窗警告
   if (riskyItems.length > 0) {
     dialog.warning({
       title: '库存不足警告',
@@ -181,7 +175,6 @@ const handleCheckAndExecute = () => {
       }
     })
   } else {
-    // 3. 没风险，直接干
     executeBatchUpdate()
   }
 }
@@ -249,7 +242,7 @@ watch(() => props.show, (val) => {
           <div class="list-wrapper target-bg">
             <div v-if="selectedList.length === 0" class="empty-target">
               <div class="dashed-box">
-                <n-icon size="40" :component="ArrowForward" color="#444" />
+                <n-icon size="40" :component="ArrowForward" class="empty-icon" />
                 <p>从左侧添加<br>或新建元件</p>
               </div>
             </div>
@@ -296,8 +289,10 @@ watch(() => props.show, (val) => {
 /* 容器样式：严格限制宽高 */
 .batch-runner-modal { 
   width: 950px; max-width: 95vw; height: 750px; max-height: 85vh;
-  background: #1c1c1e; border-radius: 16px; overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 20px 50px rgba(0,0,0,0.5);
+  /* 背景变量化 */
+  background: var(--bg-modal);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 0 0 1px var(--border-main), 0 20px 50px rgba(0,0,0,0.5);
   display: flex; flex-direction: column;
 }
 
@@ -312,14 +307,16 @@ watch(() => props.show, (val) => {
 .panel.source-panel {
   width: 320px;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255,255,255,0.08); 
-  background: rgba(0,0,0,0.2);
+  /* 使用侧边栏背景，形成区分 */
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-main); 
 }
 
 /* 右侧面板 */
 .panel.target-panel {
   flex: 1;
-  background: #1c1c1e;
+  /* 使用模态框背景 */
+  background: var(--bg-modal);
   min-width: 0; 
 }
 
@@ -327,67 +324,88 @@ watch(() => props.show, (val) => {
 
 .panel-header {
   height: 50px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding: 0 16px; 
+  /* 边框变量化 */
+  border-bottom: 1px solid var(--border-main);
 }
-.header-title { font-weight: 700; color: #fff; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.header-title { font-weight: 700; color: var(--text-primary); font-size: 14px; display: flex; align-items: center; gap: 8px; }
 
-.search-bar { padding: 10px 12px; display: flex; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.search-bar { padding: 10px 12px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-main); }
 .cat-select { width: 90px; }
 
-/* 核心布局修复：列表容器 */
 .list-wrapper { 
   flex: 1; 
   overflow: hidden; 
   position: relative; 
   display: flex; 
-  flex-direction: column; /* 确保子元素（如空状态）可以 flex 伸缩 */
+  flex-direction: column;
 }
-.target-bg { background: rgba(0,0,0,0.1); }
+/* 右侧面板背景：无需额外颜色，保持透明或极淡 */
+.target-bg { background: transparent; }
 
+/* 列表项样式 */
 .inventory-item {
-  padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer;
+  padding: 10px 16px; border-bottom: 1px solid var(--border-main); cursor: pointer;
   display: flex; align-items: center; justify-content: space-between; transition: all 0.2s;
 }
-.inventory-item:hover { background: rgba(255,255,255,0.05); }
+.inventory-item:hover { background: var(--border-hover); }
 .item-info { flex: 1; overflow: hidden; }
 .item-main { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.item-val { font-weight: bold; color: #eee; font-size: 13px; }
-.pkg-tag { background: rgba(255,255,255,0.1); color: #888; height: 16px; font-size: 10px; padding: 0 4px; }
-.item-sub { font-size: 11px; color: #666; }
-.item-add-icon { color: #444; transition: color 0.2s; }
+.item-val { font-weight: bold; color: var(--text-primary); font-size: 13px; }
+
+/* 标签样式 */
+.pkg-tag { 
+  background: var(--border-main); 
+  color: var(--text-secondary); 
+  height: 16px; font-size: 10px; padding: 0 4px; 
+}
+.item-sub { font-size: 11px; color: var(--text-tertiary); }
+.item-add-icon { color: var(--text-tertiary); transition: color 0.2s; }
 .inventory-item:hover .item-add-icon { color: #0A84FF; }
 
-/* 🔥 修复：空状态样式 */
+/* 空状态样式 */
 .empty-target { 
-  flex: 1; /* 占满 list-wrapper 剩余空间 */
+  flex: 1; 
   width: 100%;
   display: flex; 
   align-items: center; 
   justify-content: center; 
 }
 .dashed-box {
-  width: 200px; height: 150px; border: 2px dashed rgba(255,255,255,0.1); border-radius: 12px;
+  width: 200px; height: 150px; 
+  border: 2px dashed var(--border-main); 
+  border-radius: 12px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  color: #555; gap: 10px; text-align: center; font-size: 13px;
+  color: var(--text-tertiary); 
+  gap: 10px; text-align: center; font-size: 13px;
 }
+.empty-icon { color: var(--text-tertiary); }
 
+/* 选中卡片样式 */
 .selected-card {
-  margin: 10px 16px; background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 14px;
+  margin: 10px 16px; 
+  /* 亮色模式下使用白色卡片 */
+  background: var(--bg-card);
+  border: 1px solid var(--border-main); 
+  border-radius: 10px; padding: 10px 14px;
   display: flex; align-items: center; justify-content: space-between; transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05); /* 微弱阴影 */
 }
 .selected-card.add { border-left: 3px solid #30D158; }
 .selected-card.sub { border-left: 3px solid #FF453A; }
 
 .card-left { flex: 1; }
-.card-val { font-weight: bold; font-size: 14px; color: #fff; }
-.card-sub { font-size: 11px; color: #666; margin-top: 2px; }
+.card-val { font-weight: bold; font-size: 14px; color: var(--text-primary); }
+.card-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 .card-ctrl { display: flex; align-items: center; gap: 12px; }
 
+/* 模式切换按钮 */
 .mode-switch {
   cursor: pointer; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;
-  background: rgba(255,255,255,0.1); color: #888; transition: all 0.2s;
+  background: var(--border-main); 
+  color: var(--text-secondary); 
+  transition: all 0.2s;
 }
 .mode-switch.add { background: rgba(48, 209, 88, 0.15); color: #30D158; }
 .mode-switch.sub { background: rgba(255, 69, 58, 0.15); color: #FF453A; }
@@ -401,14 +419,14 @@ watch(() => props.show, (val) => {
 .panel-footer { 
   flex-shrink: 0; 
   padding: 16px; 
-  border-top: 1px solid rgba(255,255,255,0.05); 
-  background: #1c1c1e;
+  border-top: 1px solid var(--border-main); 
+  background: var(--bg-modal);
 }
-.empty-tip { text-align: center; color: #666; padding: 20px; font-size: 12px; }
+.empty-tip { text-align: center; color: var(--text-tertiary); padding: 20px; font-size: 12px; }
 
 @media (max-width: 768px) {
   .modal-body { flex-direction: column; }
-  .source-panel { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .source-panel { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid var(--border-main); }
   .target-panel { width: 100%; height: 50%; }
 }
 </style>

@@ -60,31 +60,18 @@ const slotBottomRight = ref<any[]>([])
 
 // 监听插槽变化 (解决卡死问题的核心)
 const onSlotAdd = (evt: any, slotRef: any) => {
-  // 使用 nextTick 确保拖拽库完成内部处理后再修正数据
   nextTick(() => {
     if (slotRef.value.length > 1) {
-      // 找出新拖入的元素（evt.newIndex 指向新元素位置）
       const newItem = slotRef.value[evt.newIndex]
-      // 找出所有旧元素
       const oldItems = slotRef.value.filter((i: any) => i !== newItem)
-      
-      // 1. 更新插槽：只保留新的
       slotRef.value = [newItem]
-      
-      // 2. 将旧元素归还给池子 (防止重复添加)
       oldItems.forEach((item: any) => {
         const exists = poolList.value.some(p => p.key === item.key)
-        // 还要检查它是否已经在其他插槽里（理论上单例模式不应该发生，但为了安全）
-        if (!exists) {
-          poolList.value.push(item)
-        }
+        if (!exists) poolList.value.push(item)
       })
     }
   })
 }
-
-// 也就是当从插槽拖回池子时，不用特殊处理，VueDraggable 会自动处理
-// 但我们需要确保池子的 group 设置正确
 
 // 初始化布局
 watch(() => props.show, async (val) => {
@@ -108,7 +95,6 @@ watch(() => props.show, async (val) => {
 
       const usedKeys = new Set([layout.topLeft, layout.topRight, layout.bottomLeft, layout.bottomRight])
       
-      // 过滤掉空key，确保插槽被正确填充或留空
       slotTopLeft.value = ALL_FIELDS.filter(f => f.key === layout.topLeft)
       slotTopRight.value = ALL_FIELDS.filter(f => f.key === layout.topRight)
       slotBottomLeft.value = ALL_FIELDS.filter(f => f.key === layout.bottomLeft)
@@ -299,9 +285,11 @@ const getFieldLabel = (key: string) => {
 <style scoped>
 .rule-modal { 
   width: 620px; 
-  background-color: #1c1c1e; 
+  /*背景颜色变量化 */
+  background-color: var(--bg-modal); 
   border-radius: 16px; 
   box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  transition: background-color 0.3s ease;
 }
 
 .layout-editor {
@@ -311,52 +299,58 @@ const getFieldLabel = (key: string) => {
 /* 左侧池子 */
 .field-pool {
   width: 160px;
-  background: rgba(255,255,255,0.03);
+  /* 使用侧边栏背景色作为容器背景 */
+  background: var(--bg-sidebar);
   border-radius: 12px;
   padding: 12px;
   display: flex; flex-direction: column;
 }
 .pool-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.pool-title { font-size: 13px; font-weight: 600; color: #fff; }
-.pool-hint { font-size: 11px; color: #666; }
+.pool-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.pool-hint { font-size: 11px; color: var(--text-tertiary); }
 
 .pool-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+
 .field-chip {
-  background: #2c2c2e; border: 1px solid #3a3a3c;
+  background: var(--bg-card); 
+  border: 1px solid var(--border-main);
   padding: 8px 10px; border-radius: 8px;
-  font-size: 12px; color: #ddd;
+  font-size: 12px; color: var(--text-primary);
   display: flex; align-items: center; gap: 8px;
   cursor: grab; user-select: none;
   transition: all 0.2s;
 }
-.field-chip:hover { border-color: #555; background: #333; }
+.field-chip:hover { border-color: var(--text-tertiary); background: var(--border-hover); }
 .chip-icon { font-size: 14px; color: #0A84FF; }
-.empty-msg { text-align: center; color: #444; font-size: 12px; margin-top: 20px; }
+.empty-msg { text-align: center; color: var(--text-tertiary); font-size: 12px; margin-top: 20px; }
 
 /* 右侧模拟器 */
 .simulator-container { flex: 1; display: flex; flex-direction: column; }
-.sim-header { font-size: 13px; color: #888; margin-bottom: 10px; text-align: center; }
+.sim-header { font-size: 13px; color: var(--text-tertiary); margin-bottom: 10px; text-align: center; }
 
-/* --- 核心：CSS Grid 布局 --- */
+/* --- 核心：CSS Grid 布局模拟器 --- */
 .grid-card {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  /* 模拟真实 InventoryCard 的背景 */
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
   border-radius: 16px;
   padding: 16px;
   
   display: grid;
-  grid-template-columns: 1fr 100px; /* 左列自适应，右列固定 */
-  grid-template-rows: 1fr 1fr;      /* 上下两行等高 */
-  gap: 12px;                        /* 网格间距 */
+  grid-template-columns: 1fr 100px;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
 }
 
 .grid-cell {
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(0,0,0,0.2);
-  border: 1px dashed rgba(255,255,255,0.15);
+  /* 使用透明或极淡背景，仅用虚线框示位置 */
+  background: transparent;
+  border: 1px dashed var(--border-main);
   transition: border-color 0.2s;
 }
 .grid-cell:hover { border-color: #0A84FF; }
@@ -365,19 +359,41 @@ const getFieldLabel = (key: string) => {
 .drop-area { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 
 /* 占位符文字 */
-.placeholder { font-size: 11px; color: #555; pointer-events: none; user-select: none; }
+.placeholder { font-size: 11px; color: var(--text-tertiary); pointer-events: none; user-select: none; }
 
-/* 已填充内容的样式 */
+
 .slotted-content {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; color: #fff; background: #0A84FF;
+  font-size: 13px; 
   cursor: grab;
 }
-.slotted-content.primary { font-weight: bold; font-size: 15px; background: #0A84FF; }
-.slotted-content.secondary { background: rgba(10, 132, 255, 0.2); color: #88bfff; }
-.slotted-content.tag { background: rgba(255,255,255,0.15); color: #ddd; border-radius: 4px; margin: 4px; height: auto; padding: 4px 0; }
-.slotted-content.meta { background: transparent; color: #888; border: 1px solid #444; }
+
+/* 主标题：保持蓝底白字，醒目 */
+.slotted-content.primary { 
+  font-weight: bold; font-size: 15px; 
+  background: #0A84FF; color: #fff; 
+}
+
+/* 副标题：浅蓝背景，深蓝文字 (适配亮暗) */
+.slotted-content.secondary { 
+  background: rgba(10, 132, 255, 0.15); 
+  color: #007AFF; /* 使用较深的蓝色，保证在白色背景下可见 */
+}
+
+/* 标签：使用边框背景 */
+.slotted-content.tag { 
+  background: var(--border-main); 
+  color: var(--text-secondary); 
+  border-radius: 4px; margin: 4px; height: auto; padding: 4px 0; 
+}
+
+/* 附注：透明背景，描边 */
+.slotted-content.meta { 
+  background: transparent; 
+  color: var(--text-tertiary); 
+  border: 1px solid var(--border-main); 
+}
 
 /* 拖拽中的幽灵样式 */
 .ghost-pool { opacity: 0.4; background: #0A84FF; border: 1px dashed #fff; }
@@ -385,7 +401,11 @@ const getFieldLabel = (key: string) => {
 
 /* 底部表单 */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-:deep(.n-divider__title) { color: #666; font-size: 12px; }
+
+:deep(.n-divider__title) { color: var(--text-tertiary); font-size: 12px; }
+
+:deep(.n-form-item-label) { color: var(--text-secondary) !important; }
+
 .footer { display: flex; justify-content: space-between; margin-top: 16px; }
 .right-btns { display: flex; gap: 10px; }
 </style>

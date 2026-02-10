@@ -24,20 +24,16 @@ import InventoryCard from '../components/InventoryCard.vue'
 const message = useMessage()
 const loading = ref(false)
 const rawList = ref<any[]>([])
-// 新增：存储分类规则
 const categoryRules = ref<Record<string, any>>({})
 
-// 暂停状态
 const isSnoozed = ref(false) 
 const snoozeInfo = ref('') 
 const islandAnimating = ref(false)
 
-// 自定义暂停相关的状态
 const showSnoozeMenu = ref(false)
 const snoozeMode = ref<'menu' | 'custom'>('menu') 
 const customDays = ref(3) 
 
-// 新增：加载所有分类规则 (复制自 Inventory.vue)
 const loadRules = async () => {
   try {
     const cats = await window.api.fetchCategories()
@@ -52,12 +48,9 @@ const loadRules = async () => {
   } catch (e) { console.error('加载规则失败', e) }
 }
 
-// 加载数据
 const loadData = async () => {
   loading.value = true
-  // 先加载规则，确保渲染正确
   await loadRules()
-  
   await new Promise(r => setTimeout(r, 300))
   try {
     const grouped = await window.api.fetchInventory({})
@@ -69,8 +62,6 @@ const loadData = async () => {
   }
 }
 
-// ... (以下所有暂停逻辑代码保持不变，已省略以节省篇幅) ...
-// 检查暂停状态
 const checkSnooze = () => {
   if (sessionStorage.getItem('replenish_snooze')) {
     isSnoozed.value = true
@@ -122,7 +113,6 @@ const handleResume = () => {
   window.dispatchEvent(new Event('inventory-snooze-changed'))
 }
 
-// 数据分组计算...
 type GroupedData = Record<string, any[]>
 const redGroups = computed<GroupedData>(() => {
   const groups: GroupedData = {}
@@ -240,7 +230,7 @@ onMounted(() => {
         <Transition name="fade-up" mode="out-in">
           
           <div v-if="isSnoozed" class="sleep-state state-container" key="sleep">
-            <n-icon size="80" :component="MoonOutline" color="#444" />
+            <n-icon size="80" :component="MoonOutline" class="state-icon" />
             <p>监控系统正在休息中 ({{ snoozeInfo }})</p>
             <n-button secondary size="large" @click="handleResume" class="wake-btn">叫醒它</n-button>
           </div>
@@ -298,21 +288,26 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 样式与原文件保持一致，无需改动 */
 .replenish-page { padding: 30px; height: 100%; display: flex; flex-direction: column; position: relative; }
 @media (max-width: 768px) { .replenish-page { padding: 16px; } }
 .island-container { display: flex; justify-content: center; margin-bottom: 24px; }
+
 
 .status-island {
   display: flex; align-items: center; 
   justify-content: center; 
   gap: 20px;
   padding: 8px 16px; border-radius: 24px;
-  background: #2c2c2e; border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  
+  /* 基础背景变量 */
+  background: var(--bg-card); 
+  border: 1px solid var(--border-main);
+  box-shadow: var(--shadow-card);
+  
   width: fit-content; max-width: 90%;
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: hidden;
+  color: var(--text-primary);
 }
 
 @keyframes jelly-bounce {
@@ -327,19 +322,46 @@ onMounted(() => {
 .island-info { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 .snooze-btn { display: flex; align-items: center; }
 
-.island-red { background: rgba(232, 128, 128, 0.15); border-color: rgba(232, 128, 128, 0.4); color: #ff8585; }
-.island-yellow { background: rgba(242, 201, 125, 0.15); border-color: rgba(242, 201, 125, 0.4); color: #f2c97d; }
-.island-green { background: rgba(99, 226, 183, 0.1); border-color: rgba(99, 226, 183, 0.3); color: #63e2b7; }
-.island-sleep { background: rgba(255, 255, 255, 0.05); color: #888; border-color: rgba(255,255,255,0.05); padding: 8px 24px; }
+/* 核心变量接入：实心化颜色 */
+.island-red { 
+  background: var(--rep-bg-red);
+  border: var(--rep-border-red);
+  color: var(--rep-text-red);
+}
+
+.island-yellow { 
+  background: var(--rep-bg-yellow);
+  border: var(--rep-border-yellow);
+  color: var(--rep-text-yellow);
+}
+
+.island-green { 
+  background: rgba(99, 226, 183, 0.1); 
+  border-color: rgba(99, 226, 183, 0.3); 
+  color: #63e2b7; 
+}
+:global([data-theme="light"]) .island-green { color: #10a37f; }
+
+.island-sleep { 
+  background: var(--rep-bg-sleep);
+  color: var(--text-tertiary);
+  border-color: transparent; 
+  padding: 8px 24px; 
+}
 
 .snooze-container { width: 160px; }
 .snooze-menu, .snooze-custom { padding: 8px 4px; display: flex; flex-direction: column; gap: 8px; }
-.menu-title { font-size: 12px; color: #888; margin-bottom: 2px; padding-left: 4px; }
-.back-btn { align-self: flex-start; margin-top: 4px; font-size: 12px; color: #666; }
+.menu-title { font-size: 12px; color: var(--text-tertiary); margin-bottom: 2px; padding-left: 4px; }
+.back-btn { align-self: flex-start; margin-top: 4px; font-size: 12px; color: var(--text-tertiary); }
 
 .content { flex: 1; overflow-y: auto; padding-bottom: 40px; position: relative; }
 .state-container { width: 100%; height: 100%; display: flex; flex-direction: column; }
-.empty-state, .sleep-state { align-items: center; justify-content: center; height: 60vh; color: #666; gap: 20px; }
+
+.empty-state, .sleep-state { 
+  align-items: center; justify-content: center; height: 60vh; 
+  color: var(--text-tertiary); gap: 20px; 
+}
+.state-icon { color: var(--text-tertiary); }
 .wake-btn { padding: 0 30px; font-weight: bold; }
 
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -350,8 +372,29 @@ onMounted(() => {
 
 .section { margin-bottom: 30px; }
 .zone-header { padding: 10px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 12px; display: inline-block; }
-.red-header { background: rgba(232, 128, 128, 0.15); color: #e88080; border: 1px solid rgba(232, 128, 128, 0.3); }
-.yellow-header { background: rgba(242, 201, 125, 0.15); color: #f2c97d; border: 1px solid rgba(242, 201, 125, 0.3); }
+
+/* 区域标题颜色接入变量 */
+.red-header { 
+  background: var(--rep-bg-red);
+  border: var(--rep-border-red);
+  color: var(--rep-text-red);
+}
+
+.yellow-header { 
+  background: var(--rep-bg-yellow);
+  border: var(--rep-border-yellow);
+  color: var(--rep-text-yellow);
+}
+
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 8px 0; }
 @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+
+:deep(.n-collapse-item) {
+  border-bottom: var(--rep-divider);
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+:deep(.n-collapse-item:last-child) { border-bottom: none; }
+:deep(.n-collapse-item__header-main) { color: var(--text-primary) !important; font-weight: 600; }
 </style>
