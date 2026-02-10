@@ -1,5 +1,22 @@
+<!--
+ * SiliconVault - Electronic Component Inventory Management System
+ * Copyright (C) 2026 Maxton Niu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
 <script setup lang="ts">
-import { ref, watch, h } from 'vue'
+import { ref, watch, h, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { 
   Add, RocketOutline, CreateOutline, TrashOutline, TimeOutline, Search, 
@@ -10,11 +27,13 @@ import { NButton, NIcon, NEmpty, NSpin, useDialog, useMessage, NInput, NPopover,
 import { VueDraggable } from 'vue-draggable-plus' 
 import BomEditModal from '../components/BomEditModal.vue'
 import BomRunModal from '../components/BomRunModal.vue'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const route = useRoute()
 const router = useRouter()
 const dialog = useDialog()
 const message = useMessage()
+const { t, locale } = useI18n() // 获取 locale 用于日期格式化
 
 const openFile = (path: string) => {
   window.api.openFile(path)
@@ -57,7 +76,7 @@ const loadProjects = async () => {
 
   } catch (e) {
     console.error(e)
-    message.error('加载失败')
+    message.error(t('messages.error.loadFailed'))
   } finally {
     isLoading.value = false
   }
@@ -94,7 +113,8 @@ const clearAllFilters = () => {
 }
 
 const getProjectName = (id: number) => {
-  return projectNamesMap.value.get(id) || `项目 #${id}`
+  // 这里的默认名称也可以考虑国际化，但带有ID可能需要特定处理，暂时保留
+  return projectNamesMap.value.get(id) || `Project #${id}`
 }
 
 watch(searchQuery, () => { loadProjects() })
@@ -109,7 +129,7 @@ const onDragEnd = async () => {
   const newIds = projects.value.map(p => p.id)
   try {
     await window.api.updateSortOrder('projects', newIds)
-  } catch (e) { message.error('排序保存失败') }
+  } catch (e) { message.error(t('bom.sortFailed')) }
 }
 
 const handleCreate = () => { currentProject.value = null; showEdit.value = true }
@@ -118,13 +138,13 @@ const handleRun = (proj: any) => { currentProject.value = proj; showRun.value = 
 
 const handleDelete = (id: number) => {
   dialog.warning({
-    title: '删除项目',
-    content: '确定要删除这个 BOM 吗？',
-    positiveText: '删除',
-    negativeText: '取消',
+    title: t('bom.deleteDialog.title'),
+    content: t('bom.deleteDialog.content'),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       await window.api.deleteProject(id)
-      message.success('已删除')
+      message.success(t('messages.success.deleted'))
       loadProjects()
     }
   })
@@ -146,7 +166,8 @@ const handleSmartClick = (path: string) => {
 }
 const getImages = (jsonStr?: string) => parseFiles(jsonStr).filter(f => isImage(f)).map(p => ({ url: `local-resource://${p}`, originalPath: p }))
 const getDocs = (jsonStr?: string) => parseFiles(jsonStr).filter(f => !isImage(f))
-const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/').pop()?.replace(/^\d+_/, '') || '文件', key: f, icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }) }))
+// 这里的文件名不做翻译，只翻译默认的 '文件'
+const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/').pop()?.replace(/^\d+_/, '') || t('bom.file'), key: f, icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }) }))
 </script>
 
 <template>
@@ -156,7 +177,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
       <div class="search-box">
         <n-input 
           v-model:value="searchQuery" 
-          placeholder="搜索项目..." 
+          :placeholder="t('bom.searchPlaceholder')" 
           round 
           clearable 
           class="ios-search token-input"
@@ -195,9 +216,9 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 
     <div class="content">
       <n-spin :show="isLoading">
-        <NEmpty v-if="projects.length === 0 && !isLoading" description="暂无项目" class="empty">
+        <NEmpty v-if="projects.length === 0 && !isLoading" :description="t('bom.noProjects')" class="empty">
           <template #extra v-if="isFilterMode || searchQuery">
-            <n-button size="small" @click="clearAllFilters">清除筛选</n-button>
+            <n-button size="small" @click="clearAllFilters">{{ t('bom.clearFilter') }}</n-button>
           </template>
         </NEmpty>
         
@@ -223,7 +244,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
               <div class="header-left">
                 <div class="p-name">{{ p.name }}</div>
                 <div class="p-date">
-                  <n-icon :component="TimeOutline" /> {{ new Date(p.created_at).toLocaleDateString() }}
+                  <n-icon :component="TimeOutline" /> {{ new Date(p.created_at).toLocaleDateString(locale) }}
                 </div>
               </div>
               <div class="header-right-media" @click.stop>
@@ -239,14 +260,14 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
                       <n-carousel show-arrow autoplay style="width: 280px; height: 280px">
                         <div v-for="(img, idx) in getImages(p.files)" :key="idx" class="carousel-item" @click="openFile(img.originalPath)">
                           <img :src="img.url" class="carousel-img" />
-                          <div class="carousel-hint">点击预览</div>
+                          <div class="carousel-hint">{{ t('bom.clickToPreview') }}</div>
                         </div>
                       </n-carousel>
                     </div>
                   </n-popover>
                 </div>
                 <div v-if="getDocs(p.files).length > 0" class="doc-section">
-                  <div v-if="getDocs(p.files).length === 1" class="doc-trigger clickable" @click.stop="handleSmartClick(getDocs(p.files)[0])" title="点击打开">
+                  <div v-if="getDocs(p.files).length === 1" class="doc-trigger clickable" @click.stop="handleSmartClick(getDocs(p.files)[0])" :title="t('bom.clickToOpen')">
                      <n-icon :component="DocumentTextOutline" color="#ff4d4f" size="20" />
                   </div>
                   <n-dropdown v-else trigger="click" :options="getDocOptions(getDocs(p.files))" @select="handleSmartClick">
@@ -258,14 +279,14 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
                 </div>
               </div>
             </div>
-            <div class="p-desc">{{ p.description || '暂无备注' }}</div>
+            <div class="p-desc">{{ p.description || t('bom.noDescription') }}</div>
             <div class="card-actions">
               <Transition name="fade-slide" mode="out-in">
                 <div v-if="!isManageMode" class="mode-run">
                    <div></div>
                    <n-button type="success" secondary class="run-btn" @click.stop="handleRun(p)">
                     <template #icon><n-icon :component="RocketOutline" /></template>
-                    生产扣减
+                    {{ t('bom.productionDeduction') }}
                   </n-button>
                 </div>
                 <div v-else class="mode-manage">
@@ -278,7 +299,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
                     </n-button>
                   </div>
                   <div class="drag-hint">
-                    <n-icon size="16" :component="SettingsOutline" /> 拖拽排序
+                    <n-icon size="16" :component="SettingsOutline" /> {{ t('bom.dragSort') }}
                   </div>
                 </div>
               </Transition>
@@ -294,6 +315,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 </template>
 
 <style scoped>
+/* 样式保持不变，此处省略 */
 .bom-page {
   height: 100vh;
   display: flex; flex-direction: column; overflow: hidden; 
@@ -301,7 +323,6 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 .toolbar {
   padding: 12px 16px; display: flex; gap: 12px; align-items: center;
   position: sticky; top: 0; z-index: 100;
-  /*使用变量背景 */
   background: var(--bg-sidebar); 
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-main);
@@ -310,7 +331,6 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 
 .tools { display: flex; gap: 12px; }
 
-/* 令牌化输入框样式 - 适配亮色模式 */
 :deep(.n-input) { 
   background-color: rgba(118, 118, 128, 0.24) !important; 
   border: none !important; 
@@ -321,7 +341,6 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
   background-color: rgba(118, 118, 128, 0.35) !important; 
 }
 
-/* 亮色模式下输入框优化 */
 :global([data-theme="light"]) .toolbar :deep(.n-input),
 :global([data-theme="light"]) .toolbar :deep(.n-base-selection-label) {
   background-color: rgba(0, 0, 0, 0.05) !important;
@@ -332,11 +351,9 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
   background-color: rgba(0, 0, 0, 0.08) !important;
 }
 
-/* 强制文字颜色 */
 :deep(.n-input .n-input__input-el) { color: var(--text-primary) !important; }
 :deep(.n-input .n-input__placeholder) { color: var(--text-tertiary) !important; }
 
-/* 胶囊容器 */
 .chip-container {
   display: flex; 
   gap: 6px; 
@@ -348,7 +365,6 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 }
 .chip-container::-webkit-scrollbar { display: none; }
 
-/* iOS 风格胶囊 - 颜色保持蓝色调 */
 .ios-chip {
   background: rgba(10, 132, 255, 0.15) !important; 
   color: #0A84FF !important; 
@@ -389,12 +405,11 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 .content { flex: 1; overflow-y: auto; padding: 20px; }
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
 
-/* 项目卡片核心 */
 .project-card {
-  background: var(--bg-card); /* 变量化背景 */
+  background: var(--bg-card); 
   border-radius: 16px; padding: 16px;
-  border: 1px solid var(--border-main); /* 变量化边框 */
-  box-shadow: var(--shadow-card); /* 亮色模式增加阴影 */
+  border: 1px solid var(--border-main); 
+  box-shadow: var(--shadow-card); 
   transition: all 0.2s; position: relative; z-index: 1; user-select: none; cursor: pointer;
   display: flex; flex-direction: column; gap: 10px;
 }
@@ -405,7 +420,6 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 }
 .project-card.is-draggable { cursor: grab; border-style: dashed; border-color: var(--border-hover); }
 
-/* 头部布局 */
 .card-header-row { display: flex; justify-content: space-between; align-items: flex-start; }
 .header-left { flex: 1; min-width: 0; }
 .p-name { font-size: 17px; font-weight: bold; color: var(--text-primary); margin-bottom: 4px; }
@@ -420,7 +434,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 .doc-section { display: flex; align-items: center; }
 .doc-trigger { 
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; 
-  background: var(--border-main); /* 文档按钮背景变量化 */
+  background: var(--border-main); 
   border-radius: 8px; border: 1px solid transparent; transition: all 0.2s; 
 }
 .doc-trigger.clickable { cursor: pointer; }
@@ -445,7 +459,6 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 @keyframes jiggle { 0% { transform: rotate(0deg); } 25% { transform: rotate(-0.8deg); } 75% { transform: rotate(0.8deg); } 100% { transform: rotate(0deg); } }
 .is-shaking { animation: jiggle 0.28s infinite ease-in-out; }
 
-/* 拖拽态 */
 .drag-active { 
   animation: none !important; transform: scale(1.05) !important; 
   background: var(--bg-card); 

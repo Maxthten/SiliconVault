@@ -32,6 +32,7 @@ import {
   CloudUploadOutline
 } from '@vicons/ionicons5'
 import { NIcon, NSpin, useMessage, useDialog, NInput, NSelect } from 'naive-ui'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 interface Log {
   id: number
@@ -52,16 +53,18 @@ const categoryRules = ref<Record<string, any>>({})
 
 const message = useMessage()
 const dialog = useDialog()
+const { t, locale } = useI18n()
 
-const typeOptions: any[] = [
-  { label: '全部操作', value: null },
-  { label: '库存变动', value: 'STOCK' },
-  { label: '新增元件', value: 'CREATE' },
-  { label: '修改信息', value: 'UPDATE' },
-  { label: '删除操作', value: 'DELETE' },
-  { label: '批量导入', value: 'IMPORT' },
-  { label: '数据导出', value: 'EXPORT' }
-]
+// 使用 computed 确保语言切换时选项自动更新
+const typeOptions = computed(() => [
+  { label: t('operationLog.filters.all'), value: null },
+  { label: t('operationLog.types.stock'), value: 'STOCK' },
+  { label: t('operationLog.types.create'), value: 'CREATE' },
+  { label: t('operationLog.types.update'), value: 'UPDATE' },
+  { label: t('operationLog.types.delete'), value: 'DELETE' },
+  { label: t('operationLog.types.import'), value: 'IMPORT' },
+  { label: t('operationLog.types.export'), value: 'EXPORT' }
+])
 
 const loadRules = async () => {
   try {
@@ -84,7 +87,7 @@ const loadLogs = async () => {
     logs.value = await window.api.getLogs()
   } catch (e) {
     console.error(e)
-    message.error('无法读取时光机日志')
+    message.error(t('operationLog.messages.loadFailed'))
   } finally {
     isLoading.value = false
   }
@@ -94,7 +97,6 @@ const filteredLogs = computed(() => {
   return logs.value.filter(log => {
     const matchType = !filterType.value || log.op_type === filterType.value
     
-    // 搜索时同时匹配原描述和动态生成的标题
     const dynamicTitle = getDynamicLogTitle(log)
     const matchSearch = !searchQuery.value || 
       log.desc.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
@@ -121,14 +123,12 @@ const getStockDelta = (log: Log) => {
 }
 
 const getDynamicLogTitle = (log: Log) => {
-  // 批量操作或无快照数据时，直接使用原描述
   if (['IMPORT', 'EXPORT'].includes(log.op_type)) return log.desc
 
   try {
     const snapshot = log.new_data ? JSON.parse(log.new_data) : (log.old_data ? JSON.parse(log.old_data) : null)
     if (!snapshot) return log.desc
 
-    // 获取该分类的显示规则
     const rule = categoryRules.value[snapshot.category]
     let targetKey = 'name'
 
@@ -140,17 +140,15 @@ const getDynamicLogTitle = (log: Log) => {
       }
     }
 
-    // 获取优先展示的字段值 (如阻值)
     let displayName = snapshot[targetKey]
-    // 如果首选字段为空 (例如电阻没填阻值)，回退显示名称
-    if (!displayName) displayName = snapshot.name || '未知元件'
+    if (!displayName) displayName = snapshot.name || t('common.unknown')
 
-    // 根据操作类型生成前缀
+    // 动态拼接前缀
     switch (log.op_type) {
-      case 'CREATE': return `新增: ${displayName}`
-      case 'UPDATE': return `修改: ${displayName}`
-      case 'DELETE': return `删除: ${displayName}`
-      case 'STOCK': return `库存: ${displayName}`
+      case 'CREATE': return `${t('operationLog.prefixes.create')}: ${displayName}`
+      case 'UPDATE': return `${t('operationLog.prefixes.update')}: ${displayName}`
+      case 'DELETE': return `${t('operationLog.prefixes.delete')}: ${displayName}`
+      case 'STOCK': return `${t('operationLog.prefixes.stock')}: ${displayName}`
       default: return `${log.op_type}: ${displayName}`
     }
   } catch (e) {
@@ -160,7 +158,7 @@ const getDynamicLogTitle = (log: Log) => {
 
 const handleUndo = (log: Log) => {
   if (log.op_type === 'IMPORT') {
-    message.warning('批量导入包含大量数据变更，不支持单步撤销')
+    message.warning(t('operationLog.messages.importUndoWarning'))
     return
   }
 
@@ -169,39 +167,41 @@ const handleUndo = (log: Log) => {
   }
 
   dialog.warning({
-    title: '时光倒流',
-    content: `确定要撤销 "${getDynamicLogTitle(log)}" 吗？\n撤销后，数据将恢复到操作前的状态。`,
-    positiveText: '立即撤销',
-    negativeText: '取消',
+    title: t('operationLog.dialog.undoTitle'),
+    content: t('operationLog.dialog.undoConfirm', { title: getDynamicLogTitle(log) }),
+    positiveText: t('operationLog.dialog.undoPositive'),
+    negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       try {
         await window.api.undoOperation(log.id)
-        message.success('已成功撤销')
+        message.success(t('operationLog.messages.undoSuccess'))
         loadLogs()
       } catch (e) {
         console.error(e)
-        message.error('撤销失败：可能原数据依赖已丢失')
+        message.error(t('operationLog.messages.undoFailed'))
       }
     }
   })
 }
 
+// 核心修改：根据当前语言环境格式化时间
 const formatTime = (isoString: string) => {
   const date = new Date(isoString)
-  return date.toLocaleString('zh-CN', {
+  // 使用 locale.value 确保格式跟随语言 (如 en-US 显示 AM/PM)
+  return date.toLocaleString(locale.value, {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
   }).replace(/\//g, '-')
 }
 
 const getOpConfig = (type: string) => {
   switch (type) {
-    case 'CREATE': return { icon: AddCircleOutline, color: '#30D158', label: '新增' }
-    case 'DELETE': return { icon: TrashOutline, color: '#FF453A', label: '删除' }
-    case 'UPDATE': return { icon: CreateOutline, color: '#0A84FF', label: '修改' }
-    case 'STOCK':  return { icon: CubeOutline, color: '#FF9F0A', label: '库存' }
-    case 'IMPORT': return { icon: CloudDownloadOutline, color: '#BF5AF2', label: '导入' }
-    case 'EXPORT': return { icon: CloudUploadOutline, color: '#5E5CE6', label: '导出' }
-    default:       return { icon: TimeOutline, color: '#888', label: '记录' }
+    case 'CREATE': return { icon: AddCircleOutline, color: '#30D158', label: t('operationLog.types.create') }
+    case 'DELETE': return { icon: TrashOutline, color: '#FF453A', label: t('operationLog.types.delete') }
+    case 'UPDATE': return { icon: CreateOutline, color: '#0A84FF', label: t('operationLog.types.update') }
+    case 'STOCK':  return { icon: CubeOutline, color: '#FF9F0A', label: t('operationLog.types.stock') }
+    case 'IMPORT': return { icon: CloudDownloadOutline, color: '#BF5AF2', label: t('operationLog.types.import') }
+    case 'EXPORT': return { icon: CloudUploadOutline, color: '#5E5CE6', label: t('operationLog.types.export') }
+    default:       return { icon: TimeOutline, color: '#888', label: t('operationLog.types.record') }
   }
 }
 
@@ -217,7 +217,7 @@ onMounted(() => { loadLogs() })
         <n-select 
           v-model:value="filterType" 
           :options="typeOptions" 
-          placeholder="全部操作" 
+          :placeholder="t('operationLog.filters.all')" 
           class="mini-select" 
           size="small" 
         />
@@ -226,7 +226,7 @@ onMounted(() => { loadLogs() })
       <div class="search-box">
         <n-input 
           v-model:value="searchQuery" 
-          placeholder="搜索操作记录..." 
+          :placeholder="t('operationLog.searchPlaceholder')" 
           round clearable class="ios-search"
         >
           <template #prefix><n-icon :component="Search" /></template>
@@ -235,7 +235,7 @@ onMounted(() => { loadLogs() })
 
       <div class="title-badge">
         <n-icon :component="InfiniteOutline" />
-        <span>时光机</span>
+        <span>{{ t('operationLog.title') }}</span>
       </div>
 
     </div>
@@ -245,7 +245,7 @@ onMounted(() => { loadLogs() })
         
         <div v-if="filteredLogs.length === 0 && !isLoading" class="empty-state">
           <n-icon size="64" :component="TimeOutline" class="empty-icon" />
-          <p>没有找到相关记录</p>
+          <p>{{ t('operationLog.empty') }}</p>
         </div>
 
         <div v-else class="timeline-list">
@@ -297,6 +297,7 @@ onMounted(() => { loadLogs() })
 </template>
 
 <style scoped>
+/* 样式保持不变，省略以节省篇幅 */
 .log-page {
   height: 100vh;
   display: flex; flex-direction: column; 
@@ -320,7 +321,6 @@ onMounted(() => { loadLogs() })
   background: rgba(10, 132, 255, 0.1); padding: 4px 10px; border-radius: 12px;
 }
 
-/* --- 输入框深度定制 (复用 Inventory 逻辑) --- */
 :deep(.n-input .n-input__input-el),
 :deep(.n-base-selection-label) {
   color: var(--text-primary) !important;
@@ -331,14 +331,12 @@ onMounted(() => { loadLogs() })
   color: var(--text-tertiary) !important;
 }
 
-/* 暗色默认 */
 :deep(.n-input), :deep(.n-base-selection-label) {
   background-color: rgba(118, 118, 128, 0.24) !important; 
   border: 1px solid transparent !important; 
   border-radius: 8px !important;
 }
 
-/* 亮色覆写 */
 :global([data-theme="light"]) .toolbar :deep(.n-input),
 :global([data-theme="light"]) .toolbar :deep(.n-base-selection-label) {
   background-color: rgba(0, 0, 0, 0.08) !important;
@@ -369,7 +367,7 @@ onMounted(() => { loadLogs() })
   background: var(--bg-body); 
   border: 2px solid; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; 
-  box-shadow: 0 0 0 4px rgba(0,0,0,0.05); /* 微弱光晕 */
+  box-shadow: 0 0 0 4px rgba(0,0,0,0.05); 
 }
 
 

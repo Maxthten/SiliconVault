@@ -23,6 +23,7 @@ import {
   NRadioGroup, NRadioButton, useMessage, NSpin 
 } from 'naive-ui'
 import { DocumentTextOutline } from '@vicons/ionicons5'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 // 定义合法的导入策略类型，需与 index.d.ts 保持一致
 type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
@@ -34,13 +35,13 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show', 'success'])
 const message = useMessage()
+const { t } = useI18n()
 
 // === 状态 ===
 const isParsing = ref(false)
 const isImporting = ref(false)
 const csvData = ref<any[]>([])
 const csvHeaders = ref<string[]>([])
-// 修复：默认值和类型修正，移除不支持的 'merge'
 const importMode = ref<ImportStrategy>('skip')
 
 // === 监听文件变化自动解析 ===
@@ -65,7 +66,7 @@ const parseCsv = (file: File) => {
       complete: (results) => {
         if (results.errors.length > 0) {
           console.warn('CSV Parse Warnings:', results.errors)
-          message.warning('CSV 解析存在部分格式警告，请仔细核对预览')
+          message.warning(t('csvImport.messages.parseWarning'))
         }
         
         csvData.value = results.data as any[]
@@ -74,7 +75,7 @@ const parseCsv = (file: File) => {
       },
       error: (err) => {
         console.error(err)
-        message.error('CSV 读取失败')
+        message.error(t('csvImport.messages.readFailed'))
         isParsing.value = false
       }
     })
@@ -99,15 +100,14 @@ const handleConfirm = async () => {
       min_stock: Number(row['MinStock'] || row['min_stock'] || row['预警阈值']) || 10
     }))
 
-    // 调用 API，importMode.value 类型现在是安全的
     const res = await window.api.batchImportInventory(items, importMode.value)
     
-    message.success(`导入完成：成功 ${res.success} 条，跳过/失败 ${res.skipped} 条`)
+    message.success(t('csvImport.messages.success', { success: res.success, skipped: res.skipped }))
     emit('success')
     emit('update:show', false)
   } catch (e) {
     console.error(e)
-    message.error('写入数据库失败')
+    message.error(t('csvImport.messages.importFailed'))
   } finally {
     isImporting.value = false
   }
@@ -129,7 +129,7 @@ const handleClose = () => {
   >
     <n-card 
       class="csv-modal" 
-      title="CSV 导入向导" 
+      :title="t('csvImport.title')" 
       :bordered="false" 
       role="dialog" 
       aria-modal="true"
@@ -137,23 +137,23 @@ const handleClose = () => {
       <div class="csv-modal-content">
         
         <div class="strategy-bar">
-          <div class="label">重复数据策略：</div>
+          <div class="label">{{ t('csvImport.strategyLabel') }}</div>
           <n-radio-group v-model:value="importMode" name="csv_strategy" :disabled="isImporting">
-            <n-radio-button value="skip">跳过 (保留旧数据)</n-radio-button>
-            <n-radio-button value="keep_both">保留两者 (生成副本)</n-radio-button>
-            <n-radio-button value="overwrite">完全覆盖信息</n-radio-button>
+            <n-radio-button value="skip">{{ t('csvImport.strategies.skip') }}</n-radio-button>
+            <n-radio-button value="keep_both">{{ t('csvImport.strategies.keepBoth') }}</n-radio-button>
+            <n-radio-button value="overwrite">{{ t('csvImport.strategies.overwrite') }}</n-radio-button>
           </n-radio-group>
         </div>
 
         <div class="preview-area">
           <div v-if="isParsing" class="loading-state">
             <n-spin size="large" />
-            <p>正在解析表格...</p>
+            <p>{{ t('csvImport.status.parsing') }}</p>
           </div>
 
           <div v-else-if="csvData.length > 0">
             <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
-              共解析到 <strong>{{ csvData.length }}</strong> 条数据。请检查下方列名是否正确识别。
+              <span v-html="t('csvImport.messages.parseSuccess', { count: csvData.length })"></span>
             </n-alert>
             
             <n-data-table
@@ -165,13 +165,13 @@ const handleClose = () => {
             />
             
             <div v-if="csvData.length > 5" class="more-hint">
-              ... 还有 {{ csvData.length - 5 }} 条数据未显示
+              {{ t('csvImport.messages.moreItems', { count: csvData.length - 5 }) }}
             </div>
           </div>
 
           <div v-else class="empty-state">
             <n-icon size="48" :depth="4" :component="DocumentTextOutline" />
-            <p>暂无数据或解析失败</p>
+            <p>{{ t('csvImport.status.empty') }}</p>
           </div>
         </div>
 
@@ -179,14 +179,14 @@ const handleClose = () => {
 
       <template #footer>
         <div class="modal-footer">
-          <n-button @click="handleClose" :disabled="isImporting">取消</n-button>
+          <n-button @click="handleClose" :disabled="isImporting">{{ t('common.cancel') }}</n-button>
           <n-button 
             type="primary" 
             :loading="isImporting" 
             :disabled="csvData.length === 0 || isParsing"
             @click="handleConfirm"
           >
-            确认导入数据库
+            {{ t('csvImport.actions.import') }}
           </n-button>
         </div>
       </template>
@@ -195,6 +195,7 @@ const handleClose = () => {
 </template>
 
 <style scoped>
+/* 样式保持不变 */
 .csv-modal {
   width: 800px;
   background-color: var(--bg-modal);

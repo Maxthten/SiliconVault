@@ -32,8 +32,10 @@ import {
   TrendingUpOutline 
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const SHOW_DEBUG_BUTTON = true 
+const { t, locale } = useI18n()
 
 const loading = ref(false)
 const timeRange = ref<'day' | 'week' | 'month'>('week')
@@ -68,40 +70,48 @@ const activeDrillDown = ref<string | null>(null)
 const islandStatus = computed(() => {
   if (activeDrillDown.value) {
     return {
-      text: `正在分析: ${activeDrillDown.value}`,
+      text: t('consumption.island.analyzing', { name: activeDrillDown.value }),
       icon: StatsChartOutline,
       colorClass: 'island-blue'
     }
   }
 
+  // 时间前缀映射
   const timeLabels: Record<string, string> = {
-    day: '今日',
-    week: '本周',
-    month: '本月'
+    day: t('consumption.time.today'),
+    week: t('consumption.time.thisWeek'),
+    month: t('consumption.time.thisMonth')
   }
-  const timePrefix = timeLabels[timeRange.value] || '当前'
+  const timePrefix = timeLabels[timeRange.value] || t('consumption.time.current')
 
   const intensity = data.value.summary.intensity
   if (intensity === 'high') {
     return {
-      text: `火力全开！${timePrefix}消耗 ${data.value.summary.totalQuantity} 元件`,
+      text: t('consumption.island.high', { time: timePrefix, count: data.value.summary.totalQuantity }),
       icon: FlameOutline,
       colorClass: 'island-orange'
     }
   } else if (intensity === 'medium') {
     return {
-      text: `研发推进中 - ${timePrefix}活跃: ${data.value.summary.activeProject}`,
+      text: t('consumption.island.medium', { time: timePrefix, project: data.value.summary.activeProject }),
       icon: ConstructOutline,
       colorClass: 'island-purple'
     }
   } else {
     return {
-      text: `${timePrefix}风平浪静，暂无大量消耗`,
+      text: t('consumption.island.low', { time: timePrefix }),
       icon: HardwareChipOutline,
       colorClass: 'island-gray'
     }
   }
 })
+
+// 下拉菜单选项
+const rangeOptions = computed(() => [
+  { label: t('consumption.ranges.day'), value: 'day'}, 
+  { label: t('consumption.ranges.week'), value: 'week'}, 
+  { label: t('consumption.ranges.month'), value: 'month'}
+])
 
 const top3Ranking = computed<any[]>(() => data.value.ranking.slice(0, 3))
 const restRanking = computed<any[]>(() => data.value.ranking.slice(3))
@@ -117,7 +127,7 @@ const loadRules = async () => {
     const map: Record<string, any> = {}
     results.forEach(r => map[r.cat] = r.rule)
     categoryRules.value = map
-  } catch (e) { console.error('加载规则失败', e) }
+  } catch (e) { console.error(e) }
 }
 
 const getDisplayName = (item: any) => {
@@ -138,7 +148,7 @@ const getDisplayName = (item: any) => {
     displayVal = item.spec || item.parameter || item.originalValue || item.name 
   }
 
-  return displayVal || item.name || '未命名'
+  return displayVal || item.name || t('common.unnamed')
 }
 
 const loadData = async () => {
@@ -173,15 +183,12 @@ const initChart = (dom: HTMLElement) => {
   if (existingInstance) {
     existingInstance.dispose()
   }
-  // 显式指定主题为 null，完全由 option 控制颜色
   return echarts.init(dom, null)
 }
 
-// 核心：获取当前主题对应的图表配色
 const getChartTheme = () => {
   const dark = isDark.value
-  // 获取当前卡片背景色，用于切割日历格
-  const cardBg = dark ? '#2c2c2e' : '#ffffff' // 需与 CSS 中的 --bg-card 一致
+  const cardBg = dark ? '#2c2c2e' : '#ffffff' 
 
   return {
     textColor: dark ? '#999' : '#666',
@@ -189,12 +196,9 @@ const getChartTheme = () => {
     tooltipBg: dark ? '#2c2c2e' : '#ffffff',
     tooltipBorder: dark ? '#333' : '#eee',
     tooltipText: dark ? '#fff' : '#333',
-    
-    // 日历热力图专用颜色
-    calendarItemBorder: cardBg, // 边框颜色 = 背景色，制造间隙感
-    heatmapEmpty: dark ? '#3a3a3e' : '#F2F2F7', // 空格子颜色：暗色微亮，亮色浅灰
-    
-    lineColor: '#63e2b7', // 主色调保持一致
+    calendarItemBorder: cardBg, 
+    heatmapEmpty: dark ? '#3a3a3e' : '#F2F2F7', 
+    lineColor: '#63e2b7', 
     areaStart: 'rgba(99, 226, 183, 0.4)',
     areaEnd: 'rgba(99, 226, 183, 0.0)'
   }
@@ -244,7 +248,7 @@ const renderCharts = () => {
       textStyle: { color: theme.textColor }
     }],
     series: [{
-      name: '消耗量',
+      name: t('consumption.charts.consumption'), // 国际化图例
       type: 'line',
       smooth: 0.4,
       symbol: 'none',
@@ -281,7 +285,7 @@ const renderCharts = () => {
       roseType: 'area',
       itemStyle: { 
         borderRadius: 6,
-        borderColor: theme.calendarItemBorder, // 利用边框模拟间隙
+        borderColor: theme.calendarItemBorder, 
         borderWidth: 2
       },
       data: data.value.categories,
@@ -293,6 +297,9 @@ const renderCharts = () => {
   chartHeatmap = initChart(chartHeatmapRef.value)
   const heatmapData = data.value.heatmap.map((item: any) => [item.date, item.count])
   const maxVal = Math.max(...data.value.heatmap.map((i: any) => i.count), 10)
+
+  // 动态判断日历语言
+  const calendarLang = locale.value === 'zh-CN' ? 'cn' : 'en'
 
   chartHeatmap.setOption({
     tooltip: { 
@@ -308,7 +315,7 @@ const renderCharts = () => {
       orient: 'horizontal',
       left: 'center',
       bottom: 0,
-      inRange: { color: isDark.value ? ['#3a3a3e', '#2a4c68', '#63e2b7'] : ['#F2F2F7', '#9be9a8', '#30a14e'] }, // 起始色与 heatmapEmpty 一致，实现平滑过渡
+      inRange: { color: isDark.value ? ['#3a3a3e', '#2a4c68', '#63e2b7'] : ['#F2F2F7', '#9be9a8', '#30a14e'] }, 
       textStyle: { show: false }
     },
     calendar: {
@@ -319,12 +326,13 @@ const renderCharts = () => {
       range: getHeatmapRange(timeRange.value),
       itemStyle: {
         borderWidth: 3,
-        borderColor: theme.calendarItemBorder,  // 核心：用背景色做切割线
-        color: theme.heatmapEmpty               // 核心：给空格子上色
+        borderColor: theme.calendarItemBorder,  
+        color: theme.heatmapEmpty               
       },
       yearLabel: { show: false },
-      dayLabel: { color: theme.textColor, nameMap: 'cn' },
-      monthLabel: { color: theme.textColor, nameMap: 'cn' },
+      // 应用动态语言
+      dayLabel: { color: theme.textColor, nameMap: calendarLang },
+      monthLabel: { color: theme.textColor, nameMap: calendarLang },
       splitLine: { show: false }
     },
     series: [{
@@ -352,11 +360,15 @@ const handleResize = () => {
 
 watch(timeRange, () => loadData())
 
+// 监听语言切换，重绘图表（更新标题和日历语言）
+watch(locale, () => {
+  renderCharts()
+})
+
 onMounted(() => {
   loadData()
   window.addEventListener('resize', handleResize)
   
-  // 监听主题变化，实时重绘 Canvas
   themeObserver = new MutationObserver(() => {
     const newIsDark = document.documentElement.getAttribute('data-theme') !== 'light'
     if (newIsDark !== isDark.value) {
@@ -400,11 +412,7 @@ const getRankIcon = (index: number) => {
       <div class="control-bar">
         <n-select 
           v-model:value="timeRange" 
-          :options="[
-            { label: '最近 24 小时', value: 'day'}, 
-            { label: '本周趋势', value: 'week'}, 
-            { label: '本月概览', value: 'month'}
-          ]"
+          :options="rangeOptions"
           size="small"
           class="range-select"
         />
@@ -422,7 +430,7 @@ const getRankIcon = (index: number) => {
               <template #icon><n-icon :component="ColorWandOutline" /></template>
             </n-button>
           </template>
-          <span>调试模式：{{ isMock ? '已开启 (模拟数据)' : '已关闭 (真实数据)' }}</span>
+          <span>{{ t('consumption.debug.label') }}: {{ isMock ? t('consumption.debug.on') : t('consumption.debug.off') }}</span>
         </n-popover>
       </div>
     </div>
@@ -434,7 +442,7 @@ const getRankIcon = (index: number) => {
           <div class="chart-card wide-card">
             <div class="card-header">
               <n-icon :component="FlashOutline" color="#63e2b7"/>
-              <span>消耗趋势 (Timeline)</span>
+              <span>{{ t('consumption.charts.trend') }} (Timeline)</span>
             </div>
             <div class="chart-container timeline-chart" ref="chartTimelineRef"></div>
           </div>
@@ -443,7 +451,7 @@ const getRankIcon = (index: number) => {
             <div class="chart-card square-card">
               <div class="card-header">
                 <n-icon :component="StatsChartOutline" color="#70c0e8"/>
-                <span>成分构成</span>
+                <span>{{ t('consumption.charts.composition') }}</span>
               </div>
               <div class="chart-container rose-chart" ref="chartRoseRef"></div>
             </div>
@@ -464,14 +472,14 @@ const getRankIcon = (index: number) => {
                 </div>
                 <div class="rank-value">{{ item.value }}</div>
               </div>
-              <div v-if="top3Ranking.length === 0" class="empty-tip">暂无数据</div>
+              <div v-if="top3Ranking.length === 0" class="empty-tip">{{ t('common.noData') }}</div>
             </div>
           </div>
 
           <div class="chart-card wide-card">
             <div class="card-header">
               <n-icon :component="CalendarOutline" color="#a78bfa"/>
-              <span>研发日历 (Activity)</span>
+              <span>{{ t('consumption.charts.calendar') }} (Activity)</span>
             </div>
             <div class="chart-container heatmap-chart" ref="chartHeatmapRef"></div>
           </div>
@@ -479,7 +487,7 @@ const getRankIcon = (index: number) => {
           <div class="chart-card wide-card ranking-list-card" v-if="restRanking.length > 0">
             <div class="card-header">
               <n-icon :component="TrendingUpOutline" class="header-icon-gray"/>
-              <span>详细排名 (4-10)</span>
+              <span>{{ t('consumption.charts.ranking') }} (4-10)</span>
             </div>
             <div class="ranking-list">
               <div v-for="(item, index) in restRanking" :key="index" class="rank-list-item">
@@ -500,6 +508,7 @@ const getRankIcon = (index: number) => {
 </template>
 
 <style scoped>
+/* 样式保持完全不变 */
 .consumption-page {
   background-color: transparent; 
   color: var(--text-primary);
@@ -514,12 +523,11 @@ const getRankIcon = (index: number) => {
   flex-shrink: 0; 
 }
 
-/* --- 状态岛样式 (复用 ReplenishView 逻辑) --- */
 .island-wrapper { display: flex; justify-content: center; margin-bottom: 20px; }
 .status-island {
   display: flex; align-items: center; justify-content: center; gap: 12px;
   padding: 10px 24px; border-radius: 30px;
-  background: var(--bg-card); /* 变量化 */
+  background: var(--bg-card); 
   border: 1px solid var(--border-main);
   box-shadow: var(--shadow-card);
   cursor: pointer; transition: all 0.3s ease;
@@ -528,13 +536,11 @@ const getRankIcon = (index: number) => {
 .status-island:hover { transform: scale(1.02); }
 .island-text { font-weight: 600; font-size: 14px; }
 
-/* 状态岛颜色：暗色透光，亮色实心 */
 .island-gray { color: #999; }
 .island-blue { color: #70c0e8; background: rgba(112, 192, 232, 0.1); border-color: rgba(112, 192, 232, 0.3); }
 .island-purple { color: #a78bfa; background: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.3); }
 .island-orange { color: #ff9f43; background: rgba(255, 159, 67, 0.1); border-color: rgba(255, 159, 67, 0.3); }
 
-/* 亮色模式实心化覆写 */
 :global([data-theme="light"]) .island-gray { background: #f2f2f7; color: #666; border-color: transparent; }
 :global([data-theme="light"]) .island-blue { background: #eaf6fd; color: #007aff; border-color: #cce4f6; }
 :global([data-theme="light"]) .island-purple { background: #f4f1fd; color: #5856d6; border-color: #ded6f8; }
@@ -600,9 +606,6 @@ const getRankIcon = (index: number) => {
 }
 .top-rank-card:hover { transform: translateX(4px); }
 
-/* --- Rank 卡片颜色逻辑 --- */
-
-/* 暗色模式：保持原有渐变 */
 .rank-1 { background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(36, 36, 40, 0)); border-color: rgba(255, 215, 0, 0.3); }
 .rank-1 .rank-icon-wrapper { color: #ffd700; }
 
@@ -612,7 +615,6 @@ const getRankIcon = (index: number) => {
 .rank-3 { background: linear-gradient(135deg, rgba(205, 127, 50, 0.1), rgba(36, 36, 40, 0)); border-color: rgba(205, 127, 50, 0.2); }
 .rank-3 .rank-icon-wrapper { color: #cd7f32; }
 
-/* 亮色模式：改为实心淡彩背景 + 深色边框 */
 :global([data-theme="light"]) .rank-1 { background: #fffcf0; border-color: #e6c559; }
 :global([data-theme="light"]) .rank-1 .rank-icon-wrapper { color: #d4a017; }
 

@@ -20,8 +20,10 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { NSpin, NCollapse, NCollapseItem, NButton, NIcon, NPopover, NButtonGroup, NInputNumber, NInputGroup, useMessage } from 'naive-ui'
 import { CheckmarkCircle, NotificationsOffOutline, NotificationsOutline, MoonOutline, TimeOutline } from '@vicons/ionicons5'
 import InventoryCard from '../components/InventoryCard.vue'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const message = useMessage()
+const { t } = useI18n()
 const loading = ref(false)
 const rawList = ref<any[]>([])
 const categoryRules = ref<Record<string, any>>({})
@@ -45,7 +47,7 @@ const loadRules = async () => {
     const map: Record<string, any> = {}
     results.forEach(r => map[r.cat] = r.rule)
     categoryRules.value = map
-  } catch (e) { console.error('加载规则失败', e) }
+  } catch (e) { console.error(e) }
 }
 
 const loadData = async () => {
@@ -65,7 +67,7 @@ const loadData = async () => {
 const checkSnooze = () => {
   if (sessionStorage.getItem('replenish_snooze')) {
     isSnoozed.value = true
-    snoozeInfo.value = '直到重启'
+    snoozeInfo.value = t('replenish.snooze.untilRestart')
     return
   }
   const daySnooze = localStorage.getItem('replenish_snooze_until')
@@ -74,7 +76,9 @@ const checkSnooze = () => {
     if (expireTime > Date.now()) {
       isSnoozed.value = true
       const hoursLeft = Math.ceil((expireTime - Date.now()) / (1000 * 60 * 60))
-      snoozeInfo.value = hoursLeft > 24 ? `${Math.ceil(hoursLeft / 24)} 天内` : `${hoursLeft} 小时内`
+      snoozeInfo.value = hoursLeft > 24 
+        ? t('replenish.snooze.inDays', { count: Math.ceil(hoursLeft / 24) }) 
+        : t('replenish.snooze.inHours', { count: hoursLeft })
       return
     } else {
       localStorage.removeItem('replenish_snooze_until')
@@ -92,7 +96,7 @@ const handleSnooze = (type: 'session' | 'day') => {
 
 const handleCustomSnooze = () => {
   if (!customDays.value || customDays.value <= 0) {
-    message.warning('请输入有效的天数')
+    message.warning(t('replenish.messages.invalidDays'))
     return
   }
   localStorage.setItem('replenish_snooze_until', String(Date.now() + customDays.value * 24 * 60 * 60 * 1000))
@@ -142,12 +146,12 @@ const yellowCount = computed(() => Object.values(yellowGroups.value).flat().leng
 const hasIssues = computed(() => redCount.value > 0 || yellowCount.value > 0)
 
 const statusText = computed(() => {
-  if (isSnoozed.value) return `报警已暂停 (${snoozeInfo.value})`
-  if (!hasIssues.value) return '库存监控正常'
+  if (isSnoozed.value) return `${t('replenish.status.snoozed')} (${snoozeInfo.value})`
+  if (!hasIssues.value) return t('replenish.status.normal')
   const parts: string[] = []
-  if (redCount.value > 0) parts.push(`${redCount.value} 项严重缺货`)
-  if (yellowCount.value > 0) parts.push(`${yellowCount.value} 项预警`)
-  return `发现 ${parts.join('，')}`
+  if (redCount.value > 0) parts.push(t('replenish.status.criticalItem', { count: redCount.value }))
+  if (yellowCount.value > 0) parts.push(t('replenish.status.warningItem', { count: yellowCount.value }))
+  return t('replenish.status.found', { items: parts.join('，') })
 })
 
 watch(showSnoozeMenu, (val) => {
@@ -196,28 +200,28 @@ onMounted(() => {
             <template #trigger>
               <n-button size="tiny" round class="snooze-btn">
                 <template #icon><n-icon :component="NotificationsOffOutline" /></template>
-                不再提醒
+                {{ t('replenish.actions.snooze') }}
               </n-button>
             </template>
             <div class="snooze-container">
               <div v-if="snoozeMode === 'menu'" class="snooze-menu">
-                <div class="menu-title">暂停报警...</div>
+                <div class="menu-title">{{ t('replenish.menus.snoozeTitle') }}</div>
                 <n-button-group vertical>
-                  <n-button @click="handleSnooze('session')">直到软件重启</n-button>
-                  <n-button @click="handleSnooze('day')">24 小时内</n-button>
+                  <n-button @click="handleSnooze('session')">{{ t('replenish.menus.untilRestart') }}</n-button>
+                  <n-button @click="handleSnooze('day')">{{ t('replenish.menus.24Hours') }}</n-button>
                   <n-button @click="snoozeMode = 'custom'">
                     <template #icon><n-icon :component="TimeOutline" /></template>
-                    自定义天数...
+                    {{ t('replenish.menus.customDays') }}
                   </n-button>
                 </n-button-group>
               </div>
               <div v-else class="snooze-custom">
-                <div class="menu-title">输入暂停天数</div>
+                <div class="menu-title">{{ t('replenish.menus.enterDays') }}</div>
                 <n-input-group>
                   <n-input-number v-model:value="customDays" :min="1" :max="365" style="width: 100px" />
-                  <n-button ghost @click="handleCustomSnooze">确认</n-button>
+                  <n-button ghost @click="handleCustomSnooze">{{ t('common.confirm') }}</n-button>
                 </n-input-group>
-                <n-button size="tiny" text class="back-btn" @click="snoozeMode = 'menu'"> &lt; 返回 </n-button>
+                <n-button size="tiny" text class="back-btn" @click="snoozeMode = 'menu'"> &lt; {{ t('common.back') }} </n-button>
               </div>
             </div>
           </n-popover>
@@ -231,20 +235,20 @@ onMounted(() => {
           
           <div v-if="isSnoozed" class="sleep-state state-container" key="sleep">
             <n-icon size="80" :component="MoonOutline" class="state-icon" />
-            <p>监控系统正在休息中 ({{ snoozeInfo }})</p>
-            <n-button secondary size="large" @click="handleResume" class="wake-btn">叫醒它</n-button>
+            <p>{{ t('replenish.states.sleeping') }} ({{ snoozeInfo }})</p>
+            <n-button secondary size="large" @click="handleResume" class="wake-btn">{{ t('replenish.actions.wakeUp') }}</n-button>
           </div>
 
           <div v-else-if="!hasIssues && !loading" class="empty-state state-container" key="empty">
             <n-icon size="60" :component="CheckmarkCircle" color="#63e2b7" />
-            <p>库存非常健康，无需补货</p>
-            <n-button secondary size="small" @click="loadData">刷新</n-button>
+            <p>{{ t('replenish.states.healthy') }}</p>
+            <n-button secondary size="small" @click="loadData">{{ t('common.refresh') }}</n-button>
           </div>
 
           <div v-else class="monitor-layout state-container" key="list">
             
             <div v-if="Object.keys(redGroups).length > 0" class="danger-zone section">
-              <div class="zone-header red-header"><span>🔥 严重耗尽 (立即采购)</span></div>
+              <div class="zone-header red-header"><span>{{ t('replenish.headers.critical') }}</span></div>
               <n-collapse :default-expanded-names="Object.keys(redGroups)">
                 <n-collapse-item v-for="(items, cat) in redGroups" :key="cat" :title="cat + ` (${items.length})`" :name="cat">
                   <div class="grid">
@@ -262,7 +266,7 @@ onMounted(() => {
             </div>
 
             <div v-if="Object.keys(yellowGroups).length > 0" class="warning-zone section">
-              <div class="zone-header yellow-header"><span>⚠️ 低库存预警 (建议补充)</span></div>
+              <div class="zone-header yellow-header"><span>{{ t('replenish.headers.warning') }}</span></div>
               <n-collapse :default-expanded-names="Object.keys(yellowGroups)">
                 <n-collapse-item v-for="(items, cat) in yellowGroups" :key="cat" :title="cat + ` (${items.length})`" :name="cat">
                   <div class="grid">
@@ -288,6 +292,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* 样式保持不变，此处省略 */
 .replenish-page { padding: 30px; height: 100%; display: flex; flex-direction: column; position: relative; }
 @media (max-width: 768px) { .replenish-page { padding: 16px; } }
 .island-container { display: flex; justify-content: center; margin-bottom: 24px; }
@@ -299,7 +304,6 @@ onMounted(() => {
   gap: 20px;
   padding: 8px 16px; border-radius: 24px;
   
-  /* 基础背景变量 */
   background: var(--bg-card); 
   border: 1px solid var(--border-main);
   box-shadow: var(--shadow-card);
@@ -322,7 +326,6 @@ onMounted(() => {
 .island-info { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 .snooze-btn { display: flex; align-items: center; }
 
-/* 核心变量接入：实心化颜色 */
 .island-red { 
   background: var(--rep-bg-red);
   border: var(--rep-border-red);
@@ -373,7 +376,6 @@ onMounted(() => {
 .section { margin-bottom: 30px; }
 .zone-header { padding: 10px 16px; border-radius: 8px; font-weight: bold; margin-bottom: 12px; display: inline-block; }
 
-/* 区域标题颜色接入变量 */
 .red-header { 
   background: var(--rep-bg-red);
   border: var(--rep-border-red);

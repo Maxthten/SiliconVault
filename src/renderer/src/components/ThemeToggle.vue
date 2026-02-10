@@ -30,7 +30,6 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
     class="sky-window" 
     :class="{ 'dark': isDark }" 
     @click="toggleTheme"
-    title="切换显示模式"
   >
     <div class="sky-container">
       
@@ -55,13 +54,9 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
 </template>
 
 <style scoped>
-/* 变量配置 (源自 CodePen 并适配尺寸) 
-  基础尺寸: 44px
-*/
+/* 样式完全保持不变，省略以节省篇幅 */
 .sky-window {
   --size: 44px;
-  
-  /* 颜色定义 */
   --bg-day: #3d7eae;
   --bg-night: #1d1f2c;
   --sun-color: #ecca2f;
@@ -70,9 +65,7 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
   --star-color: #ffffff;
   --cloud-front: #f3fdff;
   --cloud-back: #aacadf;
-  
-  /* 内部比例 */
-  --sun-size: 18px; /* 太阳大小 */
+  --sun-size: 18px;
   
   width: var(--size);
   height: var(--size);
@@ -84,7 +77,6 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
   box-shadow: 0 4px 10px rgba(0,0,0,0.1);
 }
 
-/* 悬停微动效果 */
 .sky-window:hover {
   transform: scale(1.05);
 }
@@ -97,41 +89,32 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
   position: relative;
 }
 
-/* --- 暗色模式触发 --- */
 .sky-window.dark .sky-container {
   background-color: var(--bg-night);
 }
 
-/* 1. 日月主体 */
 .sun-moon {
   width: var(--sun-size);
   height: var(--sun-size);
   background-color: var(--sun-color);
   border-radius: 50%;
-  
-  /* 居中定位 */
   position: absolute;
   top: 50%;
   left: 50%;
   margin-top: calc(var(--sun-size) / -2);
   margin-left: calc(var(--sun-size) / -2);
-  
-  /* 阴影与光晕 */
   box-shadow: 
     0 0 0 4px rgba(255, 255, 255, 0.1),
     0 0 0 8px rgba(255, 255, 255, 0.1),
-    inset 2px 2px 4px rgba(255, 255, 230, 0.5); /* 增加一点立体感 */
-    
-  transition: transform 0.5s cubic-bezier(0.5, 0, 0.2, 1.5); /* 弹跳效果 */
+    inset 2px 2px 4px rgba(255, 255, 230, 0.5); 
+  transition: transform 0.5s cubic-bezier(0.5, 0, 0.2, 1.5);
   overflow: hidden;
 }
 
-/* 暗色模式下：太阳变成月亮 */
 .sky-window.dark .sun-moon {
-  transform: scale(0.9); /* 月亮稍微小一点 */
+  transform: scale(0.9);
 }
 
-/* 2. 月球遮罩 (日食动画) */
 .moon-mask {
   width: 100%;
   height: 100%;
@@ -140,20 +123,15 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
   position: absolute;
   top: 0;
   left: 0;
-  
-  /* 默认移出视野 */
   transform: translateX(100%); 
   transition: transform 0.4s cubic-bezier(0.6, 0, 0.4, 1);
-  
-  /* 内部阴影模拟立体月球 */
   box-shadow: inset -2px -2px 4px rgba(0,0,0,0.2);
 }
 
 .sky-window.dark .moon-mask {
-  transform: translateX(0); /* 移回遮挡太阳 */
+  transform: translateX(0);
 }
 
-/* 3. 陨石坑 (细节) */
 .crater {
   position: absolute;
   background-color: var(--crater-color);
@@ -164,7 +142,6 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
 .crater:nth-child(2) { top: 60%; left: 50%; width: 20%; height: 20%; }
 .crater:nth-child(3) { top: 30%; left: 60%; width: 15%; height: 15%; }
 
-/* 4. 星星层 */
 .stars {
   position: absolute;
   top: 6px;
@@ -172,37 +149,31 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
   width: 34px;
   color: var(--star-color);
   opacity: 0;
-  transform: translateY(-20px); /* 默认在上方 */
+  transform: translateY(-20px);
   transition: all 0.4s ease;
   z-index: 1;
 }
 
 .sky-window.dark .stars {
   opacity: 1;
-  transform: translateY(0); /* 降落 */
+  transform: translateY(0);
 }
 
-/* 5. 云朵层 (纯 CSS 绘制) */
 .clouds {
   position: absolute;
-  bottom: 6px; /* 底部 */
+  bottom: 6px;
   left: 8px;
   width: 10px;
   height: 10px;
   background-color: var(--cloud-front);
   border-radius: 50%;
-  
-  /* 利用 box-shadow 复制出更多云朵 */
   box-shadow: 
     8px 2px 0 var(--cloud-front),
     14px 0 0 var(--cloud-front),
     20px 4px 0 var(--cloud-front),
-    
-    /* 背景阴影云 */
     4px -2px 0 var(--cloud-back),
     12px -4px 0 var(--cloud-back),
     18px -2px 0 var(--cloud-back);
-    
   transition: all 0.4s ease;
   opacity: 1;
   transform: translateY(0);
@@ -210,6 +181,6 @@ const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
 
 .sky-window.dark .clouds {
   opacity: 0;
-  transform: translateY(20px); /* 向下沉没 */
+  transform: translateY(20px);
 }
 </style>

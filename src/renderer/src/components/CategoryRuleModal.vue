@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { 
   NModal, NCard, NInput, NForm, NFormItem, NButton, 
   NDivider, useMessage, NIcon 
@@ -26,6 +26,7 @@ import {
   HardwareChipOutline, TextOutline 
 } from '@vicons/ionicons5'
 import { VueDraggable } from 'vue-draggable-plus'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const props = defineProps<{
   show: boolean
@@ -34,14 +35,15 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
+const { t } = useI18n()
 
-// 字段定义
-const ALL_FIELDS = [
-  { key: 'value', label: '核心数值', icon: TextOutline },
-  { key: 'name', label: '型号/名称', icon: HardwareChipOutline },
-  { key: 'package', label: '封装', icon: CubeOutline },
-  { key: 'location', label: '位置', icon: LocationOutline }
-]
+// 字段定义 - 使用 computed 确保能动态翻译
+const ALL_FIELDS = computed(() => [
+  { key: 'value', label: t('categoryRule.fields.value'), icon: TextOutline },
+  { key: 'name', label: t('categoryRule.fields.name'), icon: HardwareChipOutline },
+  { key: 'package', label: t('categoryRule.fields.package'), icon: CubeOutline },
+  { key: 'location', label: t('categoryRule.fields.location'), icon: LocationOutline }
+])
 
 // 表单数据
 const form = ref({
@@ -95,16 +97,16 @@ watch(() => props.show, async (val) => {
 
       const usedKeys = new Set([layout.topLeft, layout.topRight, layout.bottomLeft, layout.bottomRight])
       
-      slotTopLeft.value = ALL_FIELDS.filter(f => f.key === layout.topLeft)
-      slotTopRight.value = ALL_FIELDS.filter(f => f.key === layout.topRight)
-      slotBottomLeft.value = ALL_FIELDS.filter(f => f.key === layout.bottomLeft)
-      slotBottomRight.value = ALL_FIELDS.filter(f => f.key === layout.bottomRight)
+      slotTopLeft.value = ALL_FIELDS.value.filter(f => f.key === layout.topLeft)
+      slotTopRight.value = ALL_FIELDS.value.filter(f => f.key === layout.topRight)
+      slotBottomLeft.value = ALL_FIELDS.value.filter(f => f.key === layout.bottomLeft)
+      slotBottomRight.value = ALL_FIELDS.value.filter(f => f.key === layout.bottomRight)
 
-      poolList.value = ALL_FIELDS.filter(f => !usedKeys.has(f.key))
+      poolList.value = ALL_FIELDS.value.filter(f => !usedKeys.has(f.key))
 
     } catch (e) {
       console.error(e)
-      message.error('加载配置失败')
+      message.error(t('categoryRule.messages.loadFailed'))
     }
   }
 })
@@ -118,7 +120,7 @@ const handleSave = async () => {
   }
 
   if (!newLayout.topLeft && !newLayout.bottomLeft && !newLayout.topRight && !newLayout.bottomRight) {
-    message.warning('卡片不能完全为空')
+    message.warning(t('categoryRule.messages.layoutEmpty'))
     return
   }
 
@@ -127,25 +129,25 @@ const handleSave = async () => {
   
   try {
     await window.api.saveCategoryRule(props.category, payload)
-    message.success(`已更新 [${props.category}] 布局`)
+    message.success(t('categoryRule.messages.updated', { category: props.category }))
     emit('update:show', false)
     emit('refresh')
   } catch (e: any) {
-    message.error(`保存失败: ${e.message}`)
+    message.error(`${t('common.save')}${t('messages.error.failed')}: ${e.message}`)
   }
 }
 
 const handleReset = async () => {
   try {
     await window.api.resetCategoryRule(props.category)
-    message.success('已恢复默认设置')
+    message.success(t('categoryRule.messages.resetSuccess'))
     emit('update:show', false)
     emit('refresh')
-  } catch (e) { message.error('重置失败') }
+  } catch (e) { message.error(t('categoryRule.messages.resetFailed')) }
 }
 
 const getFieldLabel = (key: string) => {
-  const def = ALL_FIELDS.find(f => f.key === key)
+  const def = ALL_FIELDS.value.find(f => f.key === key)
   return def ? def.label : ''
 }
 </script>
@@ -153,7 +155,7 @@ const getFieldLabel = (key: string) => {
 <template>
   <n-modal :show="show" @update:show="(v) => emit('update:show', v)">
     <n-card 
-      :title="`🛠️ 布局配置: ${category}`" 
+      :title="`${t('categoryRule.title')}: ${category}`" 
       class="rule-modal" 
       :bordered="false" 
       role="dialog" 
@@ -164,8 +166,8 @@ const getFieldLabel = (key: string) => {
         
         <div class="field-pool">
           <div class="pool-header">
-            <span class="pool-title">可用字段</span>
-            <span class="pool-hint">拖拽放入右侧</span>
+            <span class="pool-title">{{ t('categoryRule.availableFields') }}</span>
+            <span class="pool-hint">{{ t('categoryRule.dragHint') }}</span>
           </div>
           <VueDraggable
             v-model="poolList"
@@ -178,12 +180,12 @@ const getFieldLabel = (key: string) => {
               <n-icon :component="item.icon" class="chip-icon"/>
               <span>{{ item.label }}</span>
             </div>
-            <div v-if="poolList.length === 0" class="empty-msg">已全部使用</div>
+            <div v-if="poolList.length === 0" class="empty-msg">{{ t('categoryRule.allUsed') }}</div>
           </VueDraggable>
         </div>
 
         <div class="simulator-container">
-          <div class="sim-header">卡片布局预览 (2x2 网格)</div>
+          <div class="sim-header">{{ t('categoryRule.preview') }}</div>
           
           <div class="grid-card">
             
@@ -198,7 +200,7 @@ const getFieldLabel = (key: string) => {
                 <div v-if="slotTopLeft.length > 0" class="slotted-content primary">
                   {{ getFieldLabel(slotTopLeft[0].key) }}
                 </div>
-                <div v-else class="placeholder">主标题</div>
+                <div v-else class="placeholder">{{ t('categoryRule.slots.mainTitle') }}</div>
               </VueDraggable>
             </div>
 
@@ -213,7 +215,7 @@ const getFieldLabel = (key: string) => {
                 <div v-if="slotTopRight.length > 0" class="slotted-content tag">
                   {{ getFieldLabel(slotTopRight[0].key) }}
                 </div>
-                <div v-else class="placeholder">标签</div>
+                <div v-else class="placeholder">{{ t('categoryRule.slots.tag') }}</div>
               </VueDraggable>
             </div>
 
@@ -228,7 +230,7 @@ const getFieldLabel = (key: string) => {
                 <div v-if="slotBottomLeft.length > 0" class="slotted-content secondary">
                   {{ getFieldLabel(slotBottomLeft[0].key) }}
                 </div>
-                <div v-else class="placeholder">副标题</div>
+                <div v-else class="placeholder">{{ t('categoryRule.slots.subTitle') }}</div>
               </VueDraggable>
             </div>
 
@@ -243,7 +245,7 @@ const getFieldLabel = (key: string) => {
                 <div v-if="slotBottomRight.length > 0" class="slotted-content meta">
                   {{ getFieldLabel(slotBottomRight[0].key) }}
                 </div>
-                <div v-else class="placeholder">附注</div>
+                <div v-else class="placeholder">{{ t('categoryRule.slots.note') }}</div>
               </VueDraggable>
             </div>
 
@@ -254,27 +256,27 @@ const getFieldLabel = (key: string) => {
       <n-divider />
 
       <n-form size="small" label-placement="left" label-width="80" class="main-form">
-        <n-divider title-placement="left">字段名称重命名 (可选)</n-divider>
+        <n-divider title-placement="left">{{ t('categoryRule.rename.title') }}</n-divider>
         <div class="form-grid">
-          <n-form-item label="Value名称">
-            <n-input v-model:value="form.valueLabel" placeholder="默认: 核心数值" />
+          <n-form-item :label="t('categoryRule.rename.valueLabel')">
+            <n-input v-model:value="form.valueLabel" :placeholder="t('categoryRule.rename.valuePlaceholder')" />
           </n-form-item>
-          <n-form-item label="Name名称">
-            <n-input v-model:value="form.nameLabel" placeholder="默认: 型号/名称" />
+          <n-form-item :label="t('categoryRule.rename.nameLabel')">
+            <n-input v-model:value="form.nameLabel" :placeholder="t('categoryRule.rename.namePlaceholder')" />
           </n-form-item>
-          <n-form-item label="Package名称">
-            <n-input v-model:value="form.packageLabel" placeholder="默认: 封装" />
+          <n-form-item :label="t('categoryRule.rename.packageLabel')">
+            <n-input v-model:value="form.packageLabel" :placeholder="t('categoryRule.rename.packagePlaceholder')" />
           </n-form-item>
         </div>
       </n-form>
 
       <template #footer>
         <div class="footer">
-          <n-button type="warning" ghost @click="handleReset">↺ 恢复默认</n-button>
+          <n-button type="warning" ghost @click="handleReset">↺ {{ t('categoryRule.reset') }}</n-button>
           
           <div class="right-btns">
-            <n-button @click="emit('update:show', false)">取消</n-button>
-            <n-button type="primary" @click="handleSave">应用配置</n-button>
+            <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
+            <n-button type="primary" @click="handleSave">{{ t('categoryRule.apply') }}</n-button>
           </div>
         </div>
       </template>
@@ -283,9 +285,9 @@ const getFieldLabel = (key: string) => {
 </template>
 
 <style scoped>
+/* 样式保持不变 */
 .rule-modal { 
   width: 620px; 
-  /*背景颜色变量化 */
   background-color: var(--bg-modal); 
   border-radius: 16px; 
   box-shadow: 0 20px 50px rgba(0,0,0,0.6);
@@ -296,10 +298,8 @@ const getFieldLabel = (key: string) => {
   display: flex; gap: 20px; height: 220px;
 }
 
-/* 左侧池子 */
 .field-pool {
   width: 160px;
-  /* 使用侧边栏背景色作为容器背景 */
   background: var(--bg-sidebar);
   border-radius: 12px;
   padding: 12px;
@@ -325,14 +325,11 @@ const getFieldLabel = (key: string) => {
 .chip-icon { font-size: 14px; color: #0A84FF; }
 .empty-msg { text-align: center; color: var(--text-tertiary); font-size: 12px; margin-top: 20px; }
 
-/* 右侧模拟器 */
 .simulator-container { flex: 1; display: flex; flex-direction: column; }
 .sim-header { font-size: 13px; color: var(--text-tertiary); margin-bottom: 10px; text-align: center; }
 
-/* --- 核心：CSS Grid 布局模拟器 --- */
 .grid-card {
   flex: 1;
-  /* 模拟真实 InventoryCard 的背景 */
   background: var(--bg-card);
   border: 1px solid var(--border-main);
   border-radius: 16px;
@@ -348,17 +345,14 @@ const getFieldLabel = (key: string) => {
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  /* 使用透明或极淡背景，仅用虚线框示位置 */
   background: transparent;
   border: 1px dashed var(--border-main);
   transition: border-color 0.2s;
 }
 .grid-cell:hover { border-color: #0A84FF; }
 
-/* 拖拽区域撑满格子 */
 .drop-area { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 
-/* 占位符文字 */
 .placeholder { font-size: 11px; color: var(--text-tertiary); pointer-events: none; user-select: none; }
 
 
@@ -369,37 +363,31 @@ const getFieldLabel = (key: string) => {
   cursor: grab;
 }
 
-/* 主标题：保持蓝底白字，醒目 */
 .slotted-content.primary { 
   font-weight: bold; font-size: 15px; 
   background: #0A84FF; color: #fff; 
 }
 
-/* 副标题：浅蓝背景，深蓝文字 (适配亮暗) */
 .slotted-content.secondary { 
   background: rgba(10, 132, 255, 0.15); 
-  color: #007AFF; /* 使用较深的蓝色，保证在白色背景下可见 */
+  color: #007AFF; 
 }
 
-/* 标签：使用边框背景 */
 .slotted-content.tag { 
   background: var(--border-main); 
   color: var(--text-secondary); 
   border-radius: 4px; margin: 4px; height: auto; padding: 4px 0; 
 }
 
-/* 附注：透明背景，描边 */
 .slotted-content.meta { 
   background: transparent; 
   color: var(--text-tertiary); 
   border: 1px solid var(--border-main); 
 }
 
-/* 拖拽中的幽灵样式 */
 .ghost-pool { opacity: 0.4; background: #0A84FF; border: 1px dashed #fff; }
 .ghost-slot { opacity: 0.5; background: #0A84FF; border-radius: 8px; }
 
-/* 底部表单 */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
 :deep(.n-divider__title) { color: var(--text-tertiary); font-size: 12px; }

@@ -1,20 +1,3 @@
-<!--
- * SiliconVault - Electronic Component Inventory Management System
- * Copyright (C) 2026 Maxton Niu
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
--->
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { 
@@ -26,6 +9,9 @@ import {
   CubeOutline, FlashOutline
 } from '@vicons/ionicons5'
 import EditDialog from './EditDialog.vue' 
+import { useI18n } from '../utils/i18n' 
+
+const { t } = useI18n()
 
 interface InventoryItem {
   id: number
@@ -63,7 +49,6 @@ const selectedList = ref<SelectedItem[]>([])
 const showCreateModal = ref(false)
 const previousIds = ref<Set<number>>(new Set())
 
-// === 🚀 核心优化：列表过滤 + 数量限制 (解决卡顿) ===
 const filteredSourceList = computed(() => {
   const list = props.allInventory || [] 
   const selectedIds = new Set(selectedList.value.map(i => i.id))
@@ -83,14 +68,14 @@ const filteredSourceList = computed(() => {
     return matchSearch && matchCat
   })
 
-  // 2. 🔥 截断显示：只显示前 100 条
   return result.slice(0, 100)
 })
 
 const categoryOptions = computed<any[]>(() => {
   const list = props.allInventory || []
   const cats = new Set(list.map(i => i.category).filter(c => c))
-  return [{ label: '全部分类', value: null }, ...Array.from(cats).map(c => ({ label: c, value: c }))]
+  // 使用翻译后的“全部分类”
+  return [{ label: t('inventory.allCategories'), value: null }, ...Array.from(cats).map(c => ({ label: c, value: c }))]
 })
 
 // 动作
@@ -119,12 +104,11 @@ watch(() => props.allInventory, (newVal) => {
   const newItem = newVal.find(item => !previousIds.value.has(item.id))
   if (newItem) {
     addToSelected(newItem)
-    message.success(`已自动添加: ${newItem.name}`)
+    message.success(t('batchEdit.messages.autoAdded', { name: newItem.name }))
     previousIds.value = new Set((props.allInventory || []).map(i => i.id))
   }
 }, { deep: true })
 
-// === 🔥 核心逻辑：执行更新 ===
 const executeBatchUpdate = async () => {
   isLoading.value = true
   try {
@@ -139,19 +123,18 @@ const executeBatchUpdate = async () => {
     })
     
     await Promise.all(tasks)
-    message.success(`成功更新 ${tasks.length} 个元件库存`)
+    message.success(t('batchEdit.messages.updateSuccess', { count: tasks.length }))
     emit('refresh')
     emit('update:show', false)
     selectedList.value = []
   } catch (e) {
     console.error(e)
-    message.error('批量执行失败')
+    message.error(t('batchEdit.messages.updateFailed'))
   } finally {
     isLoading.value = false
   }
 }
 
-// === 🔥 核心逻辑：预检查负库存 ===
 const handleCheckAndExecute = () => {
   if (selectedList.value.length === 0) return
 
@@ -163,13 +146,13 @@ const handleCheckAndExecute = () => {
 
   if (riskyItems.length > 0) {
     dialog.warning({
-      title: '库存不足警告',
-      content: `以下 ${riskyItems.length} 个元件库存将被扣减为负数（透支）：\n\n` + 
+      title: t('batchEdit.warning.title'),
+      content: t('batchEdit.warning.content', { count: riskyItems.length }) + '\n\n' + 
                riskyItems.slice(0, 3).map(i => `• ${i.value || i.name}`).join('\n') + 
-               (riskyItems.length > 3 ? `\n...等共 ${riskyItems.length} 个` : '') + 
-               `\n\n确定要继续吗？`,
-      positiveText: '确认透支',
-      negativeText: '取消',
+               (riskyItems.length > 3 ? `\n...${t('batchEdit.warning.more', { count: riskyItems.length })}` : '') + 
+               `\n\n${t('batchEdit.warning.confirm')}`,
+      positiveText: t('batchEdit.warning.positive'),
+      negativeText: t('common.cancel'),
       onPositiveClick: () => {
         executeBatchUpdate()
       }
@@ -199,31 +182,40 @@ watch(() => props.show, (val) => {
         <div class="panel source-panel">
           <div class="panel-header">
             <div class="header-title">
-              <n-icon :component="CubeOutline" /> 库存列表
+              <n-icon :component="CubeOutline" /> {{ t('batchEdit.sourceList') }}
             </div>
             <n-button size="small" type="primary" dashed @click="openCreateModal">
               <template #icon><n-icon :component="Add" /></template>
-              新建
+              {{ t('common.add') }}
             </n-button>
           </div>
 
           <div class="search-bar">
-            <n-input v-model:value="searchQuery" placeholder="搜索型号/封装..." size="small" clearable>
+            <n-input v-model:value="searchQuery" :placeholder="t('batchEdit.searchPlaceholder')" size="small" clearable>
               <template #prefix><n-icon :component="Search" /></template>
             </n-input>
-            <n-select v-model:value="filterCategory" :options="categoryOptions" size="small" placeholder="分类" class="cat-select" />
+            
+            <div :title="filterCategory || t('inventory.category')" class="cat-select-wrapper">
+              <n-select 
+                v-model:value="filterCategory" 
+                :options="categoryOptions" 
+                size="small" 
+                :placeholder="t('inventory.category')" 
+                class="cat-select" 
+              />
+            </div>
           </div>
 
           <div class="list-wrapper">
             <n-scrollbar>
-              <div v-if="filteredSourceList.length === 0" class="empty-tip">未找到相关元件</div>
+              <div v-if="filteredSourceList.length === 0" class="empty-tip">{{ t('batchEdit.notFound') }}</div>
               <div v-for="item in filteredSourceList" :key="item.id" class="inventory-item" @click="addToSelected(item)">
                 <div class="item-info">
                   <div class="item-main">
                     <span class="item-val">{{ item.value || item.name }}</span>
                     <n-tag v-if="item.package" size="small" :bordered="false" class="pkg-tag">{{ item.package }}</n-tag>
                   </div>
-                  <div class="item-sub">{{ item.name }} · 库存: {{ item.quantity }}</div>
+                  <div class="item-sub">{{ item.name }} · {{ t('batchEdit.stock') }}: {{ item.quantity }}</div>
                 </div>
                 <div class="item-add-icon"><n-icon :component="ArrowForward" /></div>
               </div>
@@ -234,16 +226,16 @@ watch(() => props.show, (val) => {
         <div class="panel target-panel">
           <div class="panel-header target-header">
             <div class="header-title">
-              <n-icon :component="FlashOutline" /> 待执行清单 ({{ selectedList.length }})
+              <n-icon :component="FlashOutline" /> {{ t('batchEdit.todoList') }} ({{ selectedList.length }})
             </div>
-            <n-button text size="tiny" v-if="selectedList.length > 0" @click="selectedList = []">清空</n-button>
+            <n-button text size="tiny" v-if="selectedList.length > 0" @click="selectedList = []">{{ t('batchEdit.clear') }}</n-button>
           </div>
 
           <div class="list-wrapper target-bg">
             <div v-if="selectedList.length === 0" class="empty-target">
               <div class="dashed-box">
                 <n-icon size="40" :component="ArrowForward" class="empty-icon" />
-                <p>从左侧添加<br>或新建元件</p>
+                <p v-html="t('batchEdit.emptyHint')"></p>
               </div>
             </div>
 
@@ -251,12 +243,12 @@ watch(() => props.show, (val) => {
               <div v-for="(item, index) in selectedList" :key="item.id" class="selected-card" :class="item.mode">
                 <div class="card-left">
                   <div class="card-val">{{ item.value || item.name }}</div>
-                  <div class="card-sub">{{ item.package }} | 现存: {{ item.quantity }}</div>
+                  <div class="card-sub">{{ item.package }} | {{ t('batchEdit.current') }}: {{ item.quantity }}</div>
                 </div>
                 <div class="card-ctrl">
                   <div class="mode-switch" @click="toggleMode(item)" :class="item.mode">
                     <div class="switch-bg"></div>
-                    <span class="switch-text">{{ item.mode === 'add' ? '入库' : '消耗' }}</span>
+                    <span class="switch-text">{{ item.mode === 'add' ? t('batchEdit.mode.add') : t('batchEdit.mode.sub') }}</span>
                   </div>
                   <n-input-number v-model:value="item.delta" size="small" :min="1" class="delta-input" :show-button="false">
                     <template #prefix>
@@ -273,7 +265,7 @@ watch(() => props.show, (val) => {
 
           <div class="panel-footer">
             <n-button block type="primary" :disabled="selectedList.length === 0" :loading="isLoading" @click="handleCheckAndExecute">
-              确认执行 ({{ selectedList.length }})
+              {{ t('batchEdit.execute', { count: selectedList.length }) }}
             </n-button>
           </div>
         </div>
@@ -286,10 +278,9 @@ watch(() => props.show, (val) => {
 </template>
 
 <style scoped>
-/* 容器样式：严格限制宽高 */
+/* 样式保持不变 */
 .batch-runner-modal { 
   width: 950px; max-width: 95vw; height: 750px; max-height: 85vh;
-  /* 背景变量化 */
   background: var(--bg-modal);
   border-radius: 16px; overflow: hidden;
   box-shadow: 0 0 0 1px var(--border-main), 0 20px 50px rgba(0,0,0,0.5);
@@ -303,19 +294,15 @@ watch(() => props.show, (val) => {
   overflow: hidden; 
 }
 
-/* 左侧面板 */
 .panel.source-panel {
   width: 320px;
   flex-shrink: 0;
-  /* 使用侧边栏背景，形成区分 */
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-main); 
 }
 
-/* 右侧面板 */
 .panel.target-panel {
   flex: 1;
-  /* 使用模态框背景 */
   background: var(--bg-modal);
   min-width: 0; 
 }
@@ -325,13 +312,15 @@ watch(() => props.show, (val) => {
 .panel-header {
   height: 50px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: 0 16px; 
-  /* 边框变量化 */
   border-bottom: 1px solid var(--border-main);
 }
 .header-title { font-weight: 700; color: var(--text-primary); font-size: 14px; display: flex; align-items: center; gap: 8px; }
 
 .search-bar { padding: 10px 12px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-main); }
-.cat-select { width: 90px; }
+
+/* 修改：包裹层宽度 */
+.cat-select-wrapper { width: 130px; flex-shrink: 0; }
+.cat-select { width: 100%; }
 
 .list-wrapper { 
   flex: 1; 
@@ -340,10 +329,8 @@ watch(() => props.show, (val) => {
   display: flex; 
   flex-direction: column;
 }
-/* 右侧面板背景：无需额外颜色，保持透明或极淡 */
 .target-bg { background: transparent; }
 
-/* 列表项样式 */
 .inventory-item {
   padding: 10px 16px; border-bottom: 1px solid var(--border-main); cursor: pointer;
   display: flex; align-items: center; justify-content: space-between; transition: all 0.2s;
@@ -353,7 +340,6 @@ watch(() => props.show, (val) => {
 .item-main { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 .item-val { font-weight: bold; color: var(--text-primary); font-size: 13px; }
 
-/* 标签样式 */
 .pkg-tag { 
   background: var(--border-main); 
   color: var(--text-secondary); 
@@ -363,7 +349,6 @@ watch(() => props.show, (val) => {
 .item-add-icon { color: var(--text-tertiary); transition: color 0.2s; }
 .inventory-item:hover .item-add-icon { color: #0A84FF; }
 
-/* 空状态样式 */
 .empty-target { 
   flex: 1; 
   width: 100%;
@@ -381,15 +366,13 @@ watch(() => props.show, (val) => {
 }
 .empty-icon { color: var(--text-tertiary); }
 
-/* 选中卡片样式 */
 .selected-card {
   margin: 10px 16px; 
-  /* 亮色模式下使用白色卡片 */
   background: var(--bg-card);
   border: 1px solid var(--border-main); 
   border-radius: 10px; padding: 10px 14px;
   display: flex; align-items: center; justify-content: space-between; transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05); /* 微弱阴影 */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
 }
 .selected-card.add { border-left: 3px solid #30D158; }
 .selected-card.sub { border-left: 3px solid #FF453A; }
@@ -400,7 +383,6 @@ watch(() => props.show, (val) => {
 
 .card-ctrl { display: flex; align-items: center; gap: 12px; }
 
-/* 模式切换按钮 */
 .mode-switch {
   cursor: pointer; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;
   background: var(--border-main); 
@@ -415,7 +397,6 @@ watch(() => props.show, (val) => {
 .green-t { color: #30D158; font-weight: bold; }
 .red-t { color: #FF453A; font-weight: bold; }
 
-/* 底部固定区域 */
 .panel-footer { 
   flex-shrink: 0; 
   padding: 16px; 

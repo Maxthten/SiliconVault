@@ -26,6 +26,7 @@ import {
   DocumentTextOutline, ArchiveOutline
 } from '@vicons/ionicons5'
 import Papa from 'papaparse'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const props = defineProps<{ 
   show: boolean
@@ -34,6 +35,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show'])
 const message = useMessage()
+const { t } = useI18n()
 
 const activeTab = ref<'inventory' | 'project'>('inventory')
 const isProcessing = ref(false)
@@ -61,7 +63,7 @@ const getItemDisplay = (item: any) => {
     return {
       primary: item.name,
       side: '',
-      secondary: item.description || '无备注'
+      secondary: item.description || t('common.noDescription')
     }
   }
 
@@ -77,7 +79,7 @@ const getItemDisplay = (item: any) => {
   }
 
   let primary = item[targetKey]
-  if (!primary) primary = item.name || '未命名'
+  if (!primary) primary = item.name || t('common.unnamed')
 
   let side = ''
   if (targetKey === 'value') {
@@ -89,7 +91,11 @@ const getItemDisplay = (item: any) => {
   return {
     primary,
     side,
-    secondary: `${item.package || '-'} · 库存: ${item.quantity}`
+    // 格式化库存显示
+    secondary: t('exportWizard.item.stockInfo', { 
+      package: item.package || '-', 
+      quantity: item.quantity 
+    })
   }
 }
 
@@ -107,7 +113,7 @@ const loadData = async () => {
     }
   } catch (e) {
     console.error(e)
-    message.error('加载数据失败')
+    message.error(t('messages.error.loadFailed'))
   }
 }
 
@@ -164,7 +170,7 @@ const toggleItem = (id: number) => {
 }
 
 const handleExportCSV = async () => {
-  if (selectedIds.value.length === 0) return message.warning('请至少选择一项')
+  if (selectedIds.value.length === 0) return message.warning(t('messages.warning.selectAtLeastOne'))
   
   isProcessing.value = true
   try {
@@ -179,16 +185,16 @@ const handleExportCSV = async () => {
     const prefix = activeTab.value === 'inventory' ? 'Inventory' : 'Projects'
     
     await window.api.exportData({
-      title: `导出 ${prefix} 表格`,
+      title: t('exportWizard.exportCsvTitle', { type: prefix }),
       filename: `${prefix}_Selection_${new Date().toISOString().split('T')[0]}.csv`,
       content: csv
     })
     
-    message.success('表格导出成功')
+    message.success(t('exportWizard.messages.csvSuccess'))
     return true
     emit('update:show', false)
   } catch (e) {
-    message.error('导出失败')
+    message.error(t('dataCenter.messages.exportFailed'))
     return false
   } finally {
     isProcessing.value = false
@@ -197,7 +203,7 @@ const handleExportCSV = async () => {
 }
 
 const handleExportBundle = async () => {
-  if (selectedIds.value.length === 0) return message.warning('请至少选择一项')
+  if (selectedIds.value.length === 0) return message.warning(t('messages.warning.selectAtLeastOne'))
 
   isProcessing.value = true
   try {
@@ -211,12 +217,12 @@ const handleExportBundle = async () => {
 
     if (res && res.success) {
       const count = activeTab.value === 'project' ? res.count.projects : res.count.inventory
-      message.success(`打包成功！包含 ${count} 项数据及关联文件`)
+      message.success(t('exportWizard.messages.bundleSuccess', { count }))
       emit('update:show', false)
     }
   } catch (e) {
     console.error(e)
-    message.error('打包失败，请检查控制台详情')
+    message.error(t('exportWizard.messages.bundleFailed'))
   } finally {
     isProcessing.value = false
   }
@@ -235,7 +241,7 @@ const handleExportBundle = async () => {
       <div class="modal-header">
         <div class="title">
           <n-icon size="22" :component="ArchiveOutline" class="header-icon" />
-          <span>导出向导</span>
+          <span>{{ t('dataCenter.export.title') }}</span>
         </div>
         <n-button text circle @click="emit('update:show', false)">
           <template #icon><n-icon size="20" :component="Close" class="close-icon" /></template>
@@ -245,32 +251,32 @@ const handleExportBundle = async () => {
       <div class="modal-content">
         
         <n-tabs v-model:value="activeTab" type="segment" animated style="margin-bottom: 16px;">
-          <n-tab-pane name="inventory" tab="库存元件">
+          <n-tab-pane name="inventory" :tab="t('exportWizard.tabs.inventory')">
             <template #tab>
-              <n-icon :component="CubeOutline" style="margin-right: 6px" /> 库存元件
+              <n-icon :component="CubeOutline" style="margin-right: 6px" /> {{ t('exportWizard.tabs.inventory') }}
             </template>
           </n-tab-pane>
-          <n-tab-pane name="project" tab="工程项目">
+          <n-tab-pane name="project" :tab="t('exportWizard.tabs.project')">
             <template #tab>
-              <n-icon :component="LayersOutline" style="margin-right: 6px" /> 工程项目
+              <n-icon :component="LayersOutline" style="margin-right: 6px" /> {{ t('exportWizard.tabs.project') }}
             </template>
           </n-tab-pane>
         </n-tabs>
 
         <div class="toolbar-row">
           <div class="search-wrap">
-            <n-input v-model:value="searchQuery" placeholder="搜索名称、描述或分类..." size="small" clearable>
+            <n-input v-model:value="searchQuery" :placeholder="t('exportWizard.searchPlaceholder')" size="small" clearable>
               <template #prefix><n-icon :component="Search" /></template>
             </n-input>
           </div>
           <n-button size="small" secondary @click="toggleAll">
-            {{ isAllSelected ? '取消全选' : '全选列表' }}
+            {{ isAllSelected ? t('exportWizard.buttons.deselectAll') : t('exportWizard.buttons.selectAll') }}
           </n-button>
         </div>
 
         <div class="list-box">
           <n-scrollbar style="max-height: 300px">
-            <div v-if="filteredList.length === 0" class="empty-hint">无匹配数据</div>
+            <div v-if="filteredList.length === 0" class="empty-hint">{{ t('exportWizard.noData') }}</div>
             
             <div 
               v-for="item in filteredList" 
@@ -301,17 +307,17 @@ const handleExportBundle = async () => {
         </div>
 
         <div class="status-bar">
-          <span>已选: <strong>{{ selectedIds.length }}</strong> 项</span>
+          <span>{{ t('exportWizard.status.selected', { count: selectedIds.length }) }}</span>
         </div>
 
         <n-divider style="margin: 16px 0" />
 
         <n-alert type="info" :show-icon="false" class="hint-box">
           <div v-if="activeTab === 'project'">
-            <strong>智能关联：</strong> 导出资源包时，系统会自动打包项目关联的 BOM 元器件及其图片/手册。
+            {{ t('exportWizard.hints.project') }}
           </div>
           <div v-else>
-            <strong>资源包 (.svdata)：</strong> 本质是 ZIP 压缩包，包含图片和文档，可被其他用户完整导入。
+            {{ t('exportWizard.hints.bundle') }}
           </div>
         </n-alert>
 
@@ -324,7 +330,7 @@ const handleExportBundle = async () => {
           @click="handleExportCSV"
         >
           <template #icon><n-icon :component="DocumentTextOutline" /></template>
-          仅导出表格 (.csv)
+          {{ t('exportWizard.buttons.exportCsv') }}
         </n-button>
 
         <n-button 
@@ -334,7 +340,7 @@ const handleExportBundle = async () => {
           @click="handleExportBundle"
         >
           <template #icon><n-icon :component="ArchiveOutline" /></template>
-          导出资源包 (.svdata)
+          {{ t('exportWizard.buttons.exportBundle') }}
         </n-button>
       </div>
 
@@ -343,9 +349,9 @@ const handleExportBundle = async () => {
 </template>
 
 <style scoped>
+/* 样式保持不变 */
 .wizard-modal {
   width: 640px;
-  /* 背景变量化 */
   background-color: var(--bg-modal); 
   border-radius: 16px;
   overflow: hidden;
@@ -355,7 +361,6 @@ const handleExportBundle = async () => {
 
 .modal-header {
   padding: 16px 24px;
-  /* 边框变量化 */
   border-bottom: 1px solid var(--border-main);
   display: flex; justify-content: space-between; align-items: center;
 }
@@ -369,7 +374,6 @@ const handleExportBundle = async () => {
 .search-wrap { flex: 1; }
 
 .list-box {
-  /* 使用侧边栏背景色，制造凹陷感 */
   background: var(--bg-sidebar); 
   border-radius: 8px; 
   border: 1px solid var(--border-main);
@@ -383,7 +387,6 @@ const handleExportBundle = async () => {
   cursor: pointer; transition: background 0.2s;
 }
 .list-item:hover { background: var(--border-hover); }
-/* 选中状态：淡蓝背景 */
 .list-item.selected { background: rgba(10, 132, 255, 0.15); }
 
 .item-info { flex: 1; overflow: hidden; }
@@ -407,7 +410,6 @@ const handleExportBundle = async () => {
 
 .modal-footer {
   padding: 16px 24px;
-  /* 使用侧边栏背景，区分底部 */
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border-main);
   display: flex; justify-content: space-between; align-items: center;

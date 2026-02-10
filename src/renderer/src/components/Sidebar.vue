@@ -28,10 +28,13 @@ import {
   StatsChartOutline 
 } from '@vicons/ionicons5'
 import { NIcon, NTooltip } from 'naive-ui'
-import ThemeToggle from './ThemeToggle.vue' // 引入天空之窗组件
+import ThemeToggle from './ThemeToggle.vue'
+// 引入国际化
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 // 0: 正常, 1: 黄色预警, 2: 红色报警
 const warningLevel = ref(0)
@@ -66,7 +69,7 @@ const checkHealth = async () => {
     else warningLevel.value = 0
 
   } catch (e) {
-    console.error("库存检测失败:", e)
+    console.error("检测失败:", e)
   }
 }
 
@@ -100,7 +103,7 @@ onUnmounted(() => {
             <n-icon size="24" :component="CubeOutline" />
           </div>
         </template>
-        库存管理
+        {{ t('sidebar.inventory') }}
       </n-tooltip>
 
       <n-tooltip trigger="hover" placement="right">
@@ -109,7 +112,7 @@ onUnmounted(() => {
             <n-icon size="24" :component="RocketOutline" />
           </div>
         </template>
-        项目 BOM
+        {{ t('sidebar.bom') }}
       </n-tooltip>
 
       <n-tooltip trigger="hover" placement="right">
@@ -129,7 +132,7 @@ onUnmounted(() => {
             <div v-if="warningLevel > 0" class="dot"></div>
           </div>
         </template>
-        <span>补货中心 {{ warningLevel === 2 ? '(急需!)' : '' }}</span>
+        <span>{{ t('sidebar.replenish') }} {{ warningLevel === 2 ? t('sidebar.urgent') : '' }}</span>
       </n-tooltip>
 
       <n-tooltip trigger="hover" placement="right">
@@ -138,7 +141,7 @@ onUnmounted(() => {
             <n-icon size="24" :component="StatsChartOutline" />
           </div>
         </template>
-        消耗看板
+        {{ t('sidebar.consumption') }}
       </n-tooltip>
 
       <n-tooltip trigger="hover" placement="right">
@@ -147,7 +150,7 @@ onUnmounted(() => {
             <n-icon size="24" :component="ServerOutline" />
           </div>
         </template>
-        数据中心
+        {{ t('sidebar.data') }}
       </n-tooltip>
 
       <n-tooltip trigger="hover" placement="right">
@@ -156,7 +159,7 @@ onUnmounted(() => {
             <n-icon size="24" :component="TimeOutline" />
           </div>
         </template>
-        操作历史
+        {{ t('sidebar.logs') }}
       </n-tooltip>
     </div>
 
@@ -169,7 +172,7 @@ onUnmounted(() => {
             <n-icon size="24" :component="SettingsOutline" />
           </div>
         </template>
-        系统设置
+        {{ t('sidebar.settings') }}
       </n-tooltip>
     </div>
 
@@ -177,25 +180,21 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* 样式保持不变 */
 .sidebar { 
   width: 70px; 
-  /* 必须是 100% 以适应父容器 */
   height: 100%;
   box-sizing: border-box;
-  
   background-color: var(--bg-sidebar); 
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  
   border-right: 1px solid var(--border-main); 
-  
   display: flex; 
   flex-direction: column; 
   align-items: center; 
   padding: 20px 0 16px 0; 
   gap: 0; 
   z-index: 100;
-  
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
@@ -234,12 +233,10 @@ onUnmounted(() => {
   margin-top: auto; 
   flex-shrink: 0;
   width: 100%;
-  
-  /* 使用 Flex 布局确保垂直排列和居中 */
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px; /* 保持与上方导航一致的间距 */
+  gap: 18px; 
 }
 
 .nav-item { 

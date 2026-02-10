@@ -26,6 +26,7 @@ import {
   CloseCircleOutline, CubeOutline, LayersOutline, TimeOutline,
   ImageOutline
 } from '@vicons/ionicons5'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 import type { ScanResult, ImportStrategy } from '../../../preload/index'
 
@@ -36,6 +37,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show', 'confirm'])
 const message = useMessage()
+const { t } = useI18n()
 
 const activeTab = ref<'inventory' | 'projects'>('inventory')
 const isImporting = ref(false)
@@ -97,15 +99,16 @@ const getItemDisplay = (item: any) => {
   }
 
   let primary = item[targetKey]
-  if (!primary) primary = item.name || '未命名'
+  if (!primary) primary = item.name || t('common.unnamed')
 
   const parts: string[] = []
-  if (item.package) parts.push(`封装: ${item.package}`)
+  // 属性名国际化
+  if (item.package) parts.push(`${t('inventory.package')}: ${item.package}`)
 
   if (targetKey === 'value') {
-     if (item.name && item.name !== primary) parts.push(`名称: ${item.name}`)
+     if (item.name && item.name !== primary) parts.push(`${t('importConflict.item.name')}: ${item.name}`)
   } else {
-     if (item.value) parts.push(`值: ${item.value}`)
+     if (item.value) parts.push(`${t('importConflict.item.value')}: ${item.value}`)
   }
 
   return {
@@ -165,13 +168,13 @@ const handleConfirm = async () => {
     const res = await window.api.executeImportBundle(props.scanResult.scanId, strategies)
     
     if (res.success) {
-      message.success('资源包导入完成')
+      message.success(t('dataCenter.messages.importCompleted'))
       emit('update:show', false)
       emit('confirm') 
     }
   } catch (e: any) {
     console.error('前端捕获到导入错误:', e)
-    message.error('导入失败: ' + (e.message || '未知错误'))
+    message.error(`${t('importConflict.messages.failed')}: ${e.message || 'Unknown'}`)
   } finally {
     isImporting.value = false
   }
@@ -190,32 +193,32 @@ const handleConfirm = async () => {
       <div class="modal-header">
         <div class="header-title">
           <n-icon size="24" :component="AlertCircleOutline" color="#FF9F0A" />
-          <span>冲突解决向导</span>
+          <span>{{ t('importConflict.title') }}</span>
         </div>
         <div class="header-summary" v-if="scanResult">
-          检测到 <strong class="highlight">{{ scanResult.conflicts.inventory.length + scanResult.conflicts.projects.length }}</strong> 个冲突项，
-          <span class="new-item-text">另有 {{ scanResult.newItems.inventory + scanResult.newItems.projects }} 个新项将自动导入。</span>
+          {{ t('importConflict.summary.detected') }} <strong class="highlight">{{ scanResult.conflicts.inventory.length + scanResult.conflicts.projects.length }}</strong> {{ t('importConflict.summary.conflicts') }}，
+          <span class="new-item-text">{{ t('importConflict.summary.newItems', { count: scanResult.newItems.inventory + scanResult.newItems.projects }) }}</span>
         </div>
       </div>
 
       <div class="modal-content" v-if="scanResult">
         <n-tabs type="segment" v-model:value="activeTab">
           
-          <n-tab-pane name="inventory" tab="库存冲突">
+          <n-tab-pane name="inventory" :tab="t('importConflict.tabs.inventory')">
             <div class="conflict-list">
               <div v-if="scanResult.conflicts.inventory.length === 0" class="empty-state">
-                <p>无库存冲突</p>
+                <p>{{ t('importConflict.noConflicts') }}</p>
               </div>
 
               <div class="batch-bar" v-else>
-                <span>批量操作：</span>
+                <span>{{ t('importConflict.batch.label') }}</span>
                 <n-button 
                   size="tiny" 
                   secondary 
                   :type="currentBatchMode.inventory === 'keep_both' ? 'primary' : 'default'"
                   @click="applyToAll('inventory', 'keep_both')"
                 >
-                  全部保留副本
+                  {{ t('importConflict.batch.keep') }}
                 </n-button>
                 <n-button 
                   size="tiny" 
@@ -223,7 +226,7 @@ const handleConfirm = async () => {
                   :type="currentBatchMode.inventory === 'skip' ? 'primary' : 'default'"
                   @click="applyToAll('inventory', 'skip')"
                 >
-                  全部跳过
+                  {{ t('importConflict.batch.skip') }}
                 </n-button>
                 <n-button 
                   size="tiny" 
@@ -231,7 +234,7 @@ const handleConfirm = async () => {
                   :type="currentBatchMode.inventory === 'overwrite' ? 'warning' : 'default'"
                   @click="applyToAll('inventory', 'overwrite')"
                 >
-                  全部覆盖
+                  {{ t('importConflict.batch.overwrite') }}
                 </n-button>
               </div>
 
@@ -244,9 +247,9 @@ const handleConfirm = async () => {
                   <div class="card remote">
                     <div class="badges-container">
                       <div v-if="item.hasFileDiff" class="mini-badge warning">
-                        <n-icon :component="ImageOutline" /> 资源变动
+                        <n-icon :component="ImageOutline" /> {{ t('importConflict.badges.resourceChange') }}
                       </div>
-                      <div class="mini-badge info">资源包</div>
+                      <div class="mini-badge info">{{ t('importConflict.badges.bundle') }}</div>
                     </div>
 
                     <div class="info-line">
@@ -257,7 +260,7 @@ const handleConfirm = async () => {
                       {{ getItemDisplay(item.remote).secondary }}
                     </div>
                     <div class="detail-line stock" :class="{ diff: item.remote.quantity !== item.local.quantity }">
-                      库存: {{ item.remote.quantity }}
+                      {{ t('importConflict.fields.stock') }}: {{ item.remote.quantity }}
                     </div>
                   </div>
 
@@ -271,8 +274,8 @@ const handleConfirm = async () => {
                         @click="inventoryDecisions[item.remote.id] = 'keep_both'"
                       >
                         <n-icon :component="CopyOutline" />
-                        <span>保留两者</span>
-                        <div class="sub-tip">自动重命名</div>
+                        <span>{{ t('importConflict.strategies.keepBoth') }}</span>
+                        <div class="sub-tip">{{ t('importConflict.strategies.keepBothTip') }}</div>
                       </div>
 
                       <div 
@@ -281,8 +284,8 @@ const handleConfirm = async () => {
                         @click="inventoryDecisions[item.remote.id] = 'skip'"
                       >
                         <n-icon :component="CloseCircleOutline" />
-                        <span>跳过</span>
-                        <div class="sub-tip">保留本机数据</div>
+                        <span>{{ t('importConflict.strategies.skip') }}</span>
+                        <div class="sub-tip">{{ t('importConflict.strategies.skipTip') }}</div>
                       </div>
 
                       <div 
@@ -291,14 +294,14 @@ const handleConfirm = async () => {
                         @click="inventoryDecisions[item.remote.id] = 'overwrite'"
                       >
                         <n-icon :component="AlertCircleOutline" />
-                        <span>覆盖</span>
-                        <div class="sub-tip">更新本机信息</div>
+                        <span>{{ t('importConflict.strategies.overwrite') }}</span>
+                        <div class="sub-tip">{{ t('importConflict.strategies.overwriteTip') }}</div>
                       </div>
                     </div>
                   </div>
 
                   <div class="card local">
-                    <div class="mini-badge local-badge">本机</div>
+                    <div class="mini-badge local-badge">{{ t('importConflict.badges.local') }}</div>
                     <div class="info-line">
                       <n-icon :component="CubeOutline" /> 
                       <strong>{{ getItemDisplay(item.local).primary }}</strong>
@@ -306,28 +309,28 @@ const handleConfirm = async () => {
                     <div class="detail-line">
                       {{ getItemDisplay(item.local).secondary }}
                     </div>
-                    <div class="detail-line stock">库存: {{ item.local.quantity }}</div>
+                    <div class="detail-line stock">{{ t('importConflict.fields.stock') }}: {{ item.local.quantity }}</div>
                   </div>
                 </div>
               </n-scrollbar>
             </div>
           </n-tab-pane>
 
-          <n-tab-pane name="projects" tab="项目冲突">
+          <n-tab-pane name="projects" :tab="t('importConflict.tabs.projects')">
             <div class="conflict-list">
               <div v-if="scanResult.conflicts.projects.length === 0" class="empty-state">
-                <p>无项目冲突</p>
+                <p>{{ t('importConflict.noConflicts') }}</p>
               </div>
 
               <div class="batch-bar" v-else>
-                 <span>批量操作：</span>
+                 <span>{{ t('importConflict.batch.label') }}</span>
                  <n-button 
                    size="tiny" 
                    secondary 
                    :type="currentBatchMode.projects === 'keep_both' ? 'primary' : 'default'"
                    @click="applyToAll('projects', 'keep_both')"
                  >
-                   全部保留副本
+                   {{ t('importConflict.batch.keep') }}
                  </n-button>
                  <n-button 
                    size="tiny" 
@@ -335,7 +338,7 @@ const handleConfirm = async () => {
                    :type="currentBatchMode.projects === 'skip' ? 'primary' : 'default'"
                    @click="applyToAll('projects', 'skip')"
                  >
-                   全部跳过
+                   {{ t('importConflict.batch.skip') }}
                  </n-button>
                  <n-button 
                    size="tiny" 
@@ -343,7 +346,7 @@ const handleConfirm = async () => {
                    :type="currentBatchMode.projects === 'overwrite' ? 'warning' : 'default'"
                    @click="applyToAll('projects', 'overwrite')"
                  >
-                   全部覆盖
+                   {{ t('importConflict.batch.overwrite') }}
                  </n-button>
               </div>
 
@@ -356,9 +359,9 @@ const handleConfirm = async () => {
                   <div class="card remote">
                     <div class="badges-container">
                       <div v-if="proj.hasFileDiff" class="mini-badge warning">
-                        <n-icon :component="ImageOutline" /> 文件变动
+                        <n-icon :component="ImageOutline" /> {{ t('importConflict.badges.fileChange') }}
                       </div>
-                      <div class="mini-badge info">资源包</div>
+                      <div class="mini-badge info">{{ t('importConflict.badges.bundle') }}</div>
                     </div>
 
                     <div class="info-line">
@@ -380,8 +383,8 @@ const handleConfirm = async () => {
                         @click="projectDecisions[proj.remote.id] = 'keep_both'"
                       >
                         <n-icon :component="CopyOutline" />
-                        <span>保留两者</span>
-                        <div class="sub-tip">自动重命名</div>
+                        <span>{{ t('importConflict.strategies.keepBoth') }}</span>
+                        <div class="sub-tip">{{ t('importConflict.strategies.keepBothTip') }}</div>
                       </div>
 
                       <div 
@@ -390,8 +393,8 @@ const handleConfirm = async () => {
                         @click="projectDecisions[proj.remote.id] = 'skip'"
                       >
                         <n-icon :component="CloseCircleOutline" />
-                        <span>跳过</span>
-                        <div class="sub-tip">保留本机数据</div>
+                        <span>{{ t('importConflict.strategies.skip') }}</span>
+                        <div class="sub-tip">{{ t('importConflict.strategies.skipTip') }}</div>
                       </div>
 
                       <div 
@@ -400,15 +403,15 @@ const handleConfirm = async () => {
                         @click="projectDecisions[proj.remote.id] = 'overwrite'"
                       >
                         <n-icon :component="AlertCircleOutline" />
-                        <span>覆盖</span>
-                        <div class="sub-tip">更新本机信息</div>
+                        <span>{{ t('importConflict.strategies.overwrite') }}</span>
+                        <div class="sub-tip">{{ t('importConflict.strategies.overwriteTip') }}</div>
                       </div>
 
                     </div>
                   </div>
 
                   <div class="card local">
-                    <div class="mini-badge local-badge">本机</div>
+                    <div class="mini-badge local-badge">{{ t('importConflict.badges.local') }}</div>
                     <div class="info-line">
                       <n-icon :component="LayersOutline" /> 
                       <strong>{{ proj.local.name }}</strong>
@@ -428,12 +431,12 @@ const handleConfirm = async () => {
       <div class="modal-footer">
         <div class="footer-tip">
           <n-icon :component="AlertCircleOutline" /> 
-          <span>⚠️ 注意：导入仅同步元器件基本信息（图片/手册）。库存数量将保留本地现状（覆盖时）或归零（新增时），不会应用资源包中的库存。</span>
+          <span>{{ t('importConflict.footerTip') }}</span>
         </div>
         <div class="footer-btns">
-          <n-button @click="emit('update:show', false)" :disabled="isImporting">取消</n-button>
+          <n-button @click="emit('update:show', false)" :disabled="isImporting">{{ t('common.cancel') }}</n-button>
           <n-button type="primary" :loading="isImporting" @click="handleConfirm">
-            执行导入
+            {{ t('importConflict.actions.execute') }}
           </n-button>
         </div>
       </div>
@@ -443,6 +446,7 @@ const handleConfirm = async () => {
 </template>
 
 <style scoped>
+/* 样式保持不变，此处省略以节省篇幅 */
 .conflict-modal {
   width: 900px;
   background-color: var(--bg-modal); 

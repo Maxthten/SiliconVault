@@ -18,6 +18,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { NModal, NCard, NInputNumber, NButton, NCollapse, NCollapseItem, NTable, useMessage, useDialog } from 'naive-ui'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const props = defineProps<{
   show: boolean
@@ -27,6 +28,7 @@ const props = defineProps<{
 const emit = defineEmits(['update:show', 'success'])
 const message = useMessage()
 const dialog = useDialog()
+const { t } = useI18n()
 
 const multiplier = ref(1)
 const deductionList = ref<any[]>([])
@@ -131,7 +133,7 @@ const setMaxQuantity = () => {
     multiplier.value = maxBuildable.value
     updateDeductions()
   } else {
-    message.warning('当前库存不足以生产任何套件')
+    message.warning(t('bomRun.messages.insufficientStock'))
   }
 }
 
@@ -142,18 +144,18 @@ const preCheckAndExecute = () => {
     const names = lackItems.map(i => getItemDisplay(i).primary).join('、')
     
     dialog.warning({
-      title: '库存不足警告',
-      content: `以下 ${lackItems.length} 种元件库存不足：\n[ ${names} ]\n\n强行扣减将导致库存变为负数，请确认是否继续？`,
-      positiveText: '继续执行',
-      negativeText: '取消',
+      title: t('bomRun.warnings.stockShortage.title'),
+      content: t('bomRun.warnings.stockShortage.content', { count: lackItems.length, names }),
+      positiveText: t('bomRun.warnings.stockShortage.positive'),
+      negativeText: t('common.cancel'),
       onPositiveClick: doExecute
     })
   } else {
     dialog.success({
-      title: '确认生产',
-      content: `确定要扣减 ${multiplier.value} 套 BOM 库存吗？`,
-      positiveText: '确定扣减',
-      negativeText: '取消',
+      title: t('bomRun.dialogs.confirmProduction.title'),
+      content: t('bomRun.dialogs.confirmProduction.content', { count: multiplier.value }),
+      positiveText: t('bomRun.dialogs.confirmProduction.positive'),
+      negativeText: t('common.cancel'),
       onPositiveClick: doExecute
     })
   }
@@ -167,11 +169,11 @@ const doExecute = async () => {
     }))
     
     await window.api.executeDeduction(payload)
-    message.success(`成功扣减 ${payload.length} 种元件库存`)
+    message.success(t('bomRun.messages.deductSuccess', { count: payload.length }))
     emit('update:show', false)
     emit('success')
   } catch (e) {
-    message.error('扣减失败: ' + e)
+    message.error(t('bomRun.messages.deductFailed') + e)
   }
 }
 </script>
@@ -179,7 +181,7 @@ const doExecute = async () => {
 <template>
   <n-modal :show="show" @update:show="(v) => emit('update:show', v)">
     <n-card 
-      title="生产执行 (库存扣减)" 
+      :title="t('bomRun.title')" 
       class="run-modal" 
       :bordered="false" 
       size="huge"
@@ -188,7 +190,7 @@ const doExecute = async () => {
     >
       <div class="control-container">
         <div class="control-panel">
-          <div class="label">生产数量 (PCS):</div>
+          <div class="label">{{ t('bomRun.labels.productionQty') }}</div>
           
           <div class="input-group">
             <n-input-number 
@@ -198,7 +200,7 @@ const doExecute = async () => {
               class="multiplier-input"
               @update:value="updateDeductions"
             >
-              <template #suffix>套</template>
+              <template #suffix>{{ t('bomRun.labels.set') }}</template>
             </n-input-number>
 
             <n-button 
@@ -208,35 +210,35 @@ const doExecute = async () => {
               class="max-btn"
               @click="setMaxQuantity"
             >
-              最大 ({{ maxBuildable }})
+              {{ t('bomRun.buttons.max') }} ({{ maxBuildable }})
             </n-button>
           </div>
         </div>
 
         <div class="stock-info" :class="{ 'stock-warning': multiplier > maxBuildable }">
           <span v-if="multiplier <= maxBuildable">
-            当前库存支持生产 <strong>{{ maxBuildable }}</strong> 套
+            {{ t('bomRun.stockInfo.canBuild') }} <strong>{{ maxBuildable }}</strong> {{ t('bomRun.labels.set') }}
             <span v-if="shortageItem" class="limit-info">
-              (受限于: {{ getItemDisplay(shortageItem).primary }})
+              ({{ t('bomRun.stockInfo.limitedBy') }} {{ getItemDisplay(shortageItem).primary }})
             </span>
           </span>
           <span v-else>
-            ⚠️ 数量超出库存上限 (最大 {{ maxBuildable }} 套)
+            {{ t('bomRun.stockInfo.exceedLimit', { max: maxBuildable }) }}
           </span>
         </div>
       </div>
 
       <div class="detail-panel">
         <n-collapse arrow-placement="right">
-          <n-collapse-item :title="`扣减清单预览 (共 ${deductionList.length} 种)`" name="1">
+          <n-collapse-item :title="t('bomRun.preview.title', { count: deductionList.length })" name="1">
             <div class="table-container">
               <n-table size="small" :single-line="false" class="dark-table">
                 <thead>
                   <tr>
-                    <th width="45%">元件信息</th>
-                    <th>当前库存</th>
-                    <th>本次扣减</th>
-                    <th>剩余</th>
+                    <th width="45%">{{ t('bomRun.table.info') }}</th>
+                    <th>{{ t('bomRun.table.current') }}</th>
+                    <th>{{ t('bomRun.table.deduct') }}</th>
+                    <th>{{ t('bomRun.table.remaining') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -275,9 +277,9 @@ const doExecute = async () => {
 
       <template #footer>
         <div class="footer">
-          <n-button @click="emit('update:show', false)">取消</n-button>
+          <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
           <n-button type="success" size="large" @click="preCheckAndExecute">
-            确认并扣减
+            {{ t('bomRun.buttons.confirmDeduct') }}
           </n-button>
         </div>
       </template>
@@ -286,20 +288,18 @@ const doExecute = async () => {
 </template>
 
 <style scoped>
+/* 样式保持不变，此处省略 */
 .run-modal { 
   width: 650px; 
-  /* 模态框背景变量化 */
   background-color: var(--bg-modal); 
   border-radius: 16px; 
 }
 
-/* 标题颜色适配 */
 :deep(.n-card-header__main) {
   color: var(--text-primary);
 }
 
 .control-container {
-  /* 控制面板背景改为侧边栏色，增加层次 */
   background: var(--bg-sidebar); 
   border-radius: 12px; 
   padding: 24px;
@@ -343,12 +343,10 @@ const doExecute = async () => {
   vertical-align: middle;
 }
 
-/* 单元格内容 */
 .cell-content { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; }
 .cell-main { font-weight: 600; font-size: 14px; color: var(--text-primary); }
 .cell-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 1px; }
 
-/* 手动输入框背景适配 */
 .manual-input { width: 80px; }
 :deep(.manual-input .n-input) {
   background-color: var(--bg-sidebar) !important;
@@ -357,7 +355,6 @@ const doExecute = async () => {
 .neg-stock { color: #FF453A; font-weight: bold; }
 .warning-text { color: #FF453A; font-weight: 800; }
 
-/* 底部操作栏适配 */
 :deep(.n-card__footer) {
   border-top: 1px solid var(--border-main);
   background: rgba(0,0,0,0.02);

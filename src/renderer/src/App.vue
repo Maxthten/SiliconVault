@@ -1,27 +1,18 @@
-<!--
- * SiliconVault - Electronic Component Inventory Management System
- * Copyright (C) 2026 Maxton Niu
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
--->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n' // 引入国际化钩子
 import { darkTheme, lightTheme, NConfigProvider, NGlobalStyle, NMessageProvider, NDialogProvider } from 'naive-ui'
 import Sidebar from './components/Sidebar.vue'
 import TitleBar from './components/TitleBar.vue' 
 import { DEFAULT_ANIMATION } from '@renderer/config/animations'
 import { getThemeOverrides } from '@renderer/utils/theme'
+
+const { locale } = useI18n() // 获取当前语言状态
+
+// 临时切换语言方法
+const toggleLanguage = () => {
+  locale.value = locale.value === 'zh-CN' ? 'en-US' : 'zh-CN'
+}
 
 // 主题状态
 const isDark = ref(true)
@@ -149,6 +140,10 @@ onUnmounted(() => {
     <n-message-provider>
       <n-dialog-provider>
         
+        <div class="debug-lang-switch" @click="toggleLanguage">
+          {{ locale === 'zh-CN' ? 'Switch to EN' : '切换中文' }}
+        </div>
+
         <div 
           class="minimal-glow" 
           :style="{ opacity: limitOpacity }"
@@ -176,6 +171,28 @@ onUnmounted(() => {
 </template>
 
 <style>
+/* 临时按钮样式 */
+.debug-lang-switch {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10000;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border-radius: 20px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s;
+  user-select: none;
+}
+.debug-lang-switch:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.05);
+}
+
 /* 全局基础设置 */
 body { 
   margin: 0; 

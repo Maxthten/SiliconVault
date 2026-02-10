@@ -1,37 +1,40 @@
-<!-- 
- * SiliconVault - Electronic Component Inventory Management System
- * Copyright (C) 2026 Maxton Niu
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
-  
--->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue' 
 import { 
-  NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NSpace, NAvatar, NDivider, NCard, NStatistic,
-  NSwitch, NSelect, NInputNumber, NCollapseTransition
+  NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NAvatar, NDivider, NCard, NStatistic,
+  NSwitch, NSelect, NInputNumber, NCollapseTransition, useDialog, NSpace
 } from 'naive-ui'
 import { 
   FolderOpenOutline, ArrowForwardCircleOutline, 
   SaveOutline, InformationCircleOutline,
   LogoGithub, HeartOutline, CodeSlashOutline, BookOutline,
   ConstructOutline, TrashBinOutline, LeafOutline, ScanOutline,
-  CloudUploadOutline, TimeOutline, ColorPaletteOutline, FlashOutline
+  CloudUploadOutline, TimeOutline, ColorPaletteOutline, FlashOutline,
+  GlobeOutline, ShieldCheckmarkOutline
 } from '@vicons/ionicons5'
 
 import localAvatar from '@renderer/assets/icon.png'
-import { ANIMATION_OPTIONS, DEFAULT_ANIMATION } from '@renderer/config/animations'
+import { DEFAULT_ANIMATION, ANIMATION_OPTIONS } from '@renderer/config/animations'
+import { useI18n } from '../utils/i18n' 
+
+const { t, locale } = useI18n()
+const message = useMessage()
+
+// 语言选项
+const langOptions = [
+  { label: '简体中文', value: 'zh-CN' },
+  { label: 'English', value: 'en-US' }
+]
+
+// 恢复使用配置文件中的动画选项，确保功能正常
+const transitionOptions = ANIMATION_OPTIONS
+
+const backupFreqOptions = [
+  { label: t('settings.storage.freqExit'), value: 'exit' },
+  { label: t('settings.storage.freq30m'), value: '30min' },
+  { label: t('settings.storage.freq1h'), value: '1h' },
+  { label: t('settings.storage.freq4h'), value: '4h' }
+]
 
 const APP_CONFIG = {
   appName: 'SiliconVault',
@@ -47,13 +50,10 @@ const APP_CONFIG = {
   sponsor: {
     enable: false,
     mode: 'folder', 
-    url: 'https://afdian.net/a/your-id', 
+    url: '', 
   }
 }
 
-const message = useMessage()
-
-// 状态
 const currentPath = ref('')
 const newPath = ref('')
 const displayVersion = ref('Loading...')
@@ -61,14 +61,10 @@ const isMigrating = ref(false)
 const showConfirm = ref(false)
 const isInitialized = ref(false) 
 
-// --- 界面设置 ---
 const uiSettings = ref({
   transitionName: DEFAULT_ANIMATION
 })
 
-const transitionOptions = ANIMATION_OPTIONS
-
-// 备份设置
 const backupSettings = ref({
   autoBackup: false,
   backupFrequency: 'exit',
@@ -76,14 +72,6 @@ const backupSettings = ref({
   maxBackups: 5
 })
 
-const frequencyOptions = [
-  { label: '仅在应用退出时', value: 'exit' },
-  { label: '每 30 分钟', value: '30min' },
-  { label: '每 1 小时', value: '1h' },
-  { label: '每 4 小时', value: '4h' }
-]
-
-// 维护状态
 const scanResult = ref<any>(null)
 const isScanning = ref(false)
 const isPurging = ref(false)
@@ -98,7 +86,6 @@ const formatSize = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 初始化
 const init = async () => {
   try {
     const path = await window.api.getStoragePath()
@@ -124,7 +111,7 @@ const init = async () => {
       displayVersion.value = APP_CONFIG.manualVersion
     }
   } catch (e) {
-    message.error('初始化信息失败')
+    message.error('Init failed')
   } finally {
     setTimeout(() => {
       isInitialized.value = true
@@ -136,22 +123,25 @@ onUnmounted(() => {
   message.destroyAll()
 })
 
+const handleLangChange = (val: string) => {
+  locale.value = val
+  localStorage.setItem('app_language', val)
+  message.success(t('settings.messages.langChanged'))
+}
+
 watch(() => uiSettings.value.transitionName, (newVal) => {
   if (!isInitialized.value) return 
-
   localStorage.setItem('ui-transition', newVal)
   window.dispatchEvent(new Event('ui-transition-changed'))
-  
-  message.success('切换动画已应用', { duration: 1500 })
+  message.success(t('settings.messages.saved'), { duration: 1500 })
 })
 
 watch(backupSettings, async (newVal) => {
   if (!isInitialized.value) return 
-
   try {
     await window.api.saveAppSettings(JSON.parse(JSON.stringify(newVal)))
   } catch (e) {
-    console.error('保存设置失败', e)
+    console.error(e)
   }
 }, { deep: true })
 
@@ -167,12 +157,8 @@ const openLink = (url: string) => {
 }
 
 const handleSponsor = async () => {
-  if (APP_CONFIG.sponsor.mode === 'url') {
-    openLink(APP_CONFIG.sponsor.url)
-  } else {
-    await window.api.openDataFolder()
-    message.info('已打开数据文件夹')
-  }
+  await window.api.openDataFolder()
+  message.info(t('settings.messages.pathSelected'))
 }
 
 const handleSelectFolder = async () => {
@@ -184,7 +170,7 @@ const handleSelectFolder = async () => {
 
 const preCheckMigration = () => {
   if (newPath.value === currentPath.value) {
-    message.warning('路径未发生变化')
+    message.warning(t('settings.messages.opFailed'))
     return
   }
   showConfirm.value = true
@@ -193,15 +179,15 @@ const preCheckMigration = () => {
 const executeMigration = async () => {
   showConfirm.value = false
   isMigrating.value = true
-  const hideLoading = message.loading('正在搬运数据...', { duration: 0 })
+  const hideLoading = message.loading(t('settings.advanced.execute') + '...', { duration: 0 })
   
   try {
     await window.api.updateStoragePath(newPath.value)
     hideLoading.destroy()
-    message.success('迁移成功，即将重启...')
+    message.success(t('settings.messages.saved'))
   } catch (e) {
     hideLoading.destroy()
-    message.error('迁移失败，请检查权限')
+    message.error(t('settings.messages.opFailed'))
     isMigrating.value = false
   }
 }
@@ -213,7 +199,7 @@ const handleScan = async () => {
     scanResult.value = res
     showScanModal.value = true
   } catch (e:any) {
-    message.error(`扫描失败: ${e.message || '未知错误'}`)
+    message.error(`${t('settings.messages.opFailed')}: ${e.message || 'Error'}`)
   } finally {
     isScanning.value = false
   }
@@ -225,11 +211,11 @@ const executePurge = async () => {
   const filesToDelete = scanResult.value.items.map(i => i.relativePath)
   try {
     const res = await window.api.purgeUnusedAssets(filesToDelete)
-    message.success(`清理完成：释放 ${formatSize(res.freedSpace)}`)
+    message.success(`${t('settings.messages.saved')} (${formatSize(res.freedSpace)})`)
     showScanModal.value = false
     scanResult.value = null 
   } catch (e) {
-    message.error('清理过程中发生错误')
+    message.error(t('settings.messages.opFailed'))
   } finally {
     isPurging.value = false
   }
@@ -238,10 +224,10 @@ const executePurge = async () => {
 const handleOptimize = async () => {
   isOptimizing.value = true
   try {
-    const res = await window.api.optimizeDatabase()
-    message.success(`优化完成：清理了 ${res.orphansRemoved} 条孤立数据`)
+    await window.api.optimizeDatabase()
+    message.success(t('settings.messages.vacuumSuccess'))
   } catch (e:any) {
-    message.error(`数据库优化失败: ${e.message}`)
+    message.error(`${t('settings.messages.opFailed')}: ${e.message}`)
   } finally {
     isOptimizing.value = false
   }
@@ -254,30 +240,50 @@ onMounted(init)
   <div class="settings-page">
     
     <div class="header">
-      <h1 class="title">系统设置</h1>
-      <p class="subtitle">偏好设置与数据管理</p>
+      <h1 class="title">{{ t('settings.title') }}</h1>
+      <p class="subtitle">{{ t('settings.subtitle') }}</p>
     </div>
 
     <div class="section">
       <div class="section-title">
         <n-icon :component="ColorPaletteOutline" />
-        <span>外观与风格</span>
+        <span>{{ t('settings.groups.interface') }}</span>
       </div>
       
       <div class="ui-panel">
         <div class="form-grid">
-          <div class="form-item full-width">
-            <div class="label">页面转场动画</div>
+          
+          <div class="form-item">
+            <div class="label">{{ t('settings.language') }}</div>
+            <n-select 
+              v-model:value="locale" 
+              :options="langOptions" 
+              @update:value="handleLangChange"
+              placeholder="Select Language"
+            >
+              <template #trigger="{ value }">
+                <div class="lang-trigger">
+                  <n-icon :component="GlobeOutline" style="margin-right: 8px" />
+                  {{ langOptions.find(o => o.value === value)?.label }}
+                </div>
+              </template>
+            </n-select>
+            <div class="sub-label">{{ t('settings.languageDesc') }}</div>
+          </div>
+
+          <div class="form-item">
+            <div class="label">{{ t('settings.appearance.animation') }}</div>
             <n-select 
               v-model:value="uiSettings.transitionName" 
               :options="transitionOptions" 
-              placeholder="选择切换动画"
+              :placeholder="t('settings.appearance.animationPlaceholder')"
             />
             <div class="sub-label">
               <n-icon :component="FlashOutline" style="vertical-align: middle; margin-right: 4px;" />
-              决定页面切换时的视觉流畅度与速度
+              {{ t('settings.appearance.animationDesc') }}
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -285,7 +291,7 @@ onMounted(init)
     <div class="section" style="margin-top: 40px;">
       <div class="section-title">
         <n-icon :component="SaveOutline" />
-        <span>数据存储库</span>
+        <span>{{ t('settings.groups.storage') }}</span>
       </div>
       
       <div class="path-card">
@@ -293,30 +299,30 @@ onMounted(init)
           <span class="dot red"></span>
           <span class="dot yellow"></span>
           <span class="dot green"></span>
-          <span class="path-label">Current Location</span>
+          <span class="path-label">{{ t('settings.storage.currentLocation') }}</span>
         </div>
         <div class="path-body">
           {{ currentPath }}
         </div>
         <div class="path-footer">
           <n-icon :component="InformationCircleOutline" />
-          <span>包含所有元件数据库、高清图片及技术手册 (PDF)</span>
+          <span>{{ t('settings.storage.locationDesc') }}</span>
         </div>
       </div>
 
       <div class="action-area">
-        <div class="action-label">数据迁移 / Change Location</div>
+        <div class="action-label">{{ t('settings.storage.path') }}</div>
         <n-input-group class="input-group">
           <n-input 
             v-model:value="newPath" 
             readonly 
-            placeholder="选择新的存储目录..." 
+            :placeholder="t('settings.storage.changePath')" 
             class="path-input"
             size="large"
           />
           <n-button type="primary" secondary size="large" @click="handleSelectFolder">
             <template #icon><n-icon :component="FolderOpenOutline" /></template>
-            浏览
+            {{ t('common.browse') }}
           </n-button>
         </n-input-group>
 
@@ -330,7 +336,7 @@ onMounted(init)
             class="migrate-btn"
           >
             <template #icon><n-icon :component="ArrowForwardCircleOutline" /></template>
-            开始迁移并重启软件
+            {{ t('settings.dialogs.migrationConfirmBtn') }}
           </n-button>
         </div>
       </div>
@@ -339,19 +345,16 @@ onMounted(init)
     <div class="section" style="margin-top: 40px;">
       <div class="section-title">
         <n-icon :component="CloudUploadOutline" />
-        <span>自动备份策略</span>
+        <span>{{ t('settings.storage.autoBackup') }}</span>
       </div>
 
       <div class="backup-panel">
         <div class="backup-header">
           <div class="backup-info">
-            <div class="b-title">启用自动备份</div>
-            <div class="b-desc">根据预设频率自动打包全量数据，防止意外丢失。</div>
+            <div class="b-title">{{ t('settings.storage.autoBackup') }}</div>
+            <div class="b-desc">{{ t('settings.storage.backupDesc') }}</div>
           </div>
-          <n-switch v-model:value="backupSettings.autoBackup" size="large">
-            <template #checked>开启</template>
-            <template #unchecked>关闭</template>
-          </n-switch>
+          <n-switch v-model:value="backupSettings.autoBackup" size="large" />
         </div>
 
         <n-collapse-transition :show="backupSettings.autoBackup">
@@ -360,38 +363,36 @@ onMounted(init)
             
             <div class="form-grid">
               <div class="form-item">
-                <div class="label">备份频率</div>
+                <div class="label">{{ t('settings.storage.frequency') }}</div>
                 <n-select 
                   v-model:value="backupSettings.backupFrequency" 
-                  :options="frequencyOptions" 
-                  placeholder="选择频率"
+                  :options="backupFreqOptions" 
+                  placeholder="Select"
                 />
                 <div class="sub-label">
                   <n-icon :component="TimeOutline" style="vertical-align: middle; margin-right: 4px;" />
-                  仅在数据发生变更时触发
+                  {{ t('settings.storage.freqDesc') }}
                 </div>
               </div>
 
               <div class="form-item">
-                <div class="label">保留份数</div>
+                <div class="label">{{ t('settings.storage.maxFiles') }}</div>
                 <n-input-number 
                   v-model:value="backupSettings.maxBackups" 
                   :min="1" 
                   :max="50"
                   button-placement="both"
                 />
-                <div class="sub-label">
-                  滚动删除旧备份，节省空间
-                </div>
+                <div class="sub-label">{{ t('settings.storage.maxFilesDesc') }}</div>
               </div>
 
               <div class="form-item full-width">
-                <div class="label">备份存储位置</div>
+                <div class="label">{{ t('settings.storage.backupPathLabel') }}</div>
                 <n-input-group>
                   <n-input 
                     v-model:value="backupSettings.backupPath" 
                     readonly 
-                    placeholder="选择备份存放目录..." 
+                    :placeholder="t('settings.storage.defaultPath')" 
                   />
                   <n-button @click="handleSelectBackupFolder">
                     <template #icon><n-icon :component="FolderOpenOutline" /></template>
@@ -406,8 +407,8 @@ onMounted(init)
 
     <div class="section" style="margin-top: 40px;">
       <div class="section-title">
-        <n-icon :component="ConstructOutline" />
-        <span>数据维护</span>
+        <n-icon :component="ShieldCheckmarkOutline" />
+        <span>{{ t('settings.groups.advanced') }}</span>
       </div>
 
       <div class="maintenance-grid">
@@ -416,12 +417,12 @@ onMounted(init)
             <n-icon :component="TrashBinOutline" />
           </div>
           <div class="m-content">
-            <div class="m-title">冗余文件清理</div>
-            <div class="m-desc">扫描 assets 目录下未被引用的图片和文档，释放存储空间。</div>
+            <div class="m-title">{{ t('settings.advanced.cleanAssets') }}</div>
+            <div class="m-desc">{{ t('settings.advanced.cleanAssetsDesc') }}</div>
           </div>
           <n-button secondary type="error" @click="handleScan" :loading="isScanning">
             <template #icon><n-icon :component="ScanOutline" /></template>
-            扫描
+            {{ t('settings.advanced.scan') }}
           </n-button>
         </div>
 
@@ -430,17 +431,20 @@ onMounted(init)
             <n-icon :component="LeafOutline" />
           </div>
           <div class="m-content">
-            <div class="m-title">数据库深度优化</div>
-            <div class="m-desc">清理孤立的 BOM 关联数据，并执行 VACUUM 重组数据库文件。</div>
+            <div class="m-title">{{ t('settings.advanced.vacuum') }}</div>
+            <div class="m-desc">{{ t('settings.advanced.vacuumDesc') }}</div>
           </div>
           <n-button secondary type="success" @click="handleOptimize" :loading="isOptimizing">
-            立即优化
+            {{ t('settings.advanced.execute') }}
           </n-button>
         </div>
       </div>
     </div>
 
     <div class="footer-area">
+      <div class="section-title" style="justify-content: center; margin-bottom: 20px;">
+        <n-icon :component="InformationCircleOutline" /> {{ t('settings.groups.about') }}
+      </div>
       
       <div class="dev-card">
         <div class="dev-info">
@@ -501,61 +505,60 @@ onMounted(init)
       </div>
     </div>
 
-    <n-modal v-model:show="showScanModal" preset="dialog" title="扫描结果" style="width: 500px">
+    <n-modal v-model:show="showScanModal" preset="dialog" :title="t('settings.scan.title')" style="width: 500px">
       <div v-if="scanResult" class="scan-modal-content">
         <n-card :bordered="false" class="stat-panel">
           <div class="stat-row">
-            <n-statistic label="发现垃圾文件" :value="scanResult.count">
-              <template #suffix>个</template>
+            <n-statistic :label="t('settings.scan.junkFiles')" :value="scanResult.count">
+              <template #suffix>{{ t('settings.scan.unit') }}</template>
             </n-statistic>
-            <n-statistic label="可释放空间">
-              <template #default>
-                 {{ formatSize(scanResult.totalSize) }}
-              </template>
+            <n-statistic :label="t('settings.scan.freedSpace')">
+              <template #default>{{ formatSize(scanResult.totalSize) }}</template>
             </n-statistic>
           </div>
         </n-card>
         
         <div v-if="scanResult.count > 0" class="tip-box warning">
           <n-icon :component="InformationCircleOutline" />
-          <span>这些文件未被数据库中的任何元器件或项目引用。删除操作不可逆，请确认。</span>
+          <span>{{ t('settings.scan.warning') }}</span>
         </div>
         <div v-else class="tip-box success">
           <n-icon :component="LeafOutline" />
-          <span>太棒了！您的数据存储非常干净，没有发现冗余文件。</span>
+          <span>{{ t('settings.scan.success') }}</span>
         </div>
       </div>
       
       <template #action>
         <n-space>
-          <n-button @click="showScanModal = false">关闭</n-button>
+          <n-button @click="showScanModal = false">{{ t('common.cancel') }}</n-button>
           <n-button 
             v-if="scanResult && scanResult.count > 0" 
             type="error" 
             @click="executePurge" 
             :loading="isPurging"
           >
-            立即清理
+            {{ t('settings.scan.cleanNow') }}
           </n-button>
         </n-space>
       </template>
     </n-modal>
 
-    <n-modal v-model:show="showConfirm" preset="dialog" title="⚠️ 数据迁移确认" style="width: 500px">
+    <n-modal v-model:show="showConfirm" preset="dialog" :title="t('settings.dialogs.migrationTitle')" style="width: 500px">
       <div class="modal-content">
-        <p>您即将把所有数据从：</p>
+        <p>{{ t('settings.dialogs.migrationDesc') }}</p>
         <div class="path-compare old">{{ currentPath }}</div>
         <div class="arrow">⬇</div>
         <div class="path-compare new">{{ newPath }}</div>
-        <p class="warning">注意：迁移完成后应用将自动重启。</p>
+        <p class="warning">{{ t('settings.dialogs.migrationWarning') }}</p>
       </div>
       <template #action>
         <n-space>
-          <n-button @click="showConfirm = false">我再想想</n-button>
-          <n-button type="warning" @click="executeMigration">确认迁移</n-button>
+          <n-button @click="showConfirm = false">{{ t('common.cancel') }}</n-button>
+          <n-button type="warning" @click="executeMigration">{{ t('common.confirm') }}</n-button>
         </n-space>
       </template>
     </n-modal>
+
   </div>
 </template>
 
@@ -583,7 +586,7 @@ onMounted(init)
 }
 
 /* UI 设置面板 */
-.ui-panel {
+.ui-panel, .backup-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-main);
   box-shadow: var(--shadow-card);
@@ -591,12 +594,17 @@ onMounted(init)
   padding: 25px;
   transition: all 0.3s;
 }
-.ui-panel:hover {
+.ui-panel:hover, .backup-panel:hover {
   background: var(--bg-card);
   border-color: var(--border-hover);
 }
 
-/* 路径卡片 - 终端风格容器 */
+.lang-trigger {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+}
+
+/* 路径卡片 */
 .path-card {
   background: var(--bg-card);
   border: 1px solid var(--border-main);
@@ -606,11 +614,9 @@ onMounted(init)
   margin-bottom: 30px;
 }
 .path-header {
-  background: var(--bg-sidebar); /* 侧栏色作为标题栏 */
+  background: var(--bg-sidebar); 
   padding: 8px 15px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: flex; align-items: center; gap: 6px;
   border-bottom: 1px solid var(--border-main);
 }
 .dot { width: 10px; height: 10px; border-radius: 50%; }
@@ -620,9 +626,9 @@ onMounted(init)
 .path-label { margin-left: 10px; font-size: 12px; color: var(--text-tertiary); font-family: monospace; }
 .path-body {
   padding: 20px;
-  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 15px;
-  color: #0A84FF; /* 保持 accent color */
+  color: #0A84FF;
   word-break: break-all;
   line-height: 1.5;
 }
@@ -630,13 +636,11 @@ onMounted(init)
   padding: 10px 20px;
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border-main);
-  font-size: 12px;
-  color: var(--text-tertiary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  font-size: 12px; color: var(--text-tertiary);
+  display: flex; align-items: center; gap: 6px;
 }
 
+.action-area { display: flex; flex-direction: column; }
 .action-label { font-size: 13px; color: var(--text-tertiary); margin-bottom: 8px; }
 .input-group { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
 .migrate-btn-wrapper { 
@@ -646,41 +650,19 @@ onMounted(init)
 }
 .migrate-btn-wrapper.visible { max-height: 60px; opacity: 1; }
 
-/* 备份面板样式 */
-.backup-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-main);
-  box-shadow: var(--shadow-card);
-  border-radius: 12px;
-  padding: 25px;
-  transition: all 0.3s;
-}
-.backup-panel:hover {
-  background: var(--bg-card);
-  border-color: var(--border-hover);
-}
-.backup-header {
-  display: flex; justify-content: space-between; align-items: center;
-}
+.backup-header { display: flex; justify-content: space-between; align-items: center; }
 .b-title { font-weight: bold; font-size: 15px; margin-bottom: 5px; color: var(--text-primary); }
 .b-desc { font-size: 13px; color: var(--text-tertiary); }
 .backup-body { padding-top: 10px; }
 .backup-divider { margin: 10px 0 20px 0; opacity: 0.5; background-color: var(--border-main); }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .form-item { display: flex; flex-direction: column; gap: 8px; }
 .form-item.full-width { grid-column: span 2; }
 .label { font-size: 13px; color: var(--text-primary); font-weight: 500; }
 .sub-label { margin-top: 5px; font-size: 12px; color: var(--text-tertiary); }
 
-/* 维护卡片网格 */
-.maintenance-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-}
+.maintenance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .m-card {
   background: var(--bg-card); 
   border: 1px solid var(--border-main);
@@ -704,62 +686,42 @@ onMounted(init)
 .m-title { font-weight: bold; font-size: 15px; color: var(--text-primary); margin-bottom: 5px; }
 .m-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
 
-/* 扫描弹窗 */
-.scan-modal-content { padding: 10px 0; }
-.stat-panel { 
-  background: var(--bg-sidebar); 
-  border: 1px solid var(--border-main);
-  border-radius: 8px; margin-bottom: 20px; 
-}
-.stat-row { display: flex; justify-content: space-around; }
-.tip-box {
-  padding: 12px; border-radius: 8px; font-size: 13px; display: flex; align-items: center; gap: 8px;
-}
-.tip-box.warning { background: rgba(255, 159, 10, 0.1); color: #FF9F0A; }
-.tip-box.success { background: rgba(48, 209, 88, 0.1); color: #30D158; }
-
-/* 底部区域 */
 .footer-area { margin-top: 60px; padding-top: 20px; }
-
-/* 开发者卡片 */
 .dev-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: flex; justify-content: space-between; align-items: center;
   background: var(--bg-card);
   border: 1px solid var(--border-main);
   box-shadow: var(--shadow-card);
-  padding: 15px 20px;
-  border-radius: 12px;
+  padding: 15px 20px; border-radius: 12px;
 }
 .dev-info { display: flex; align-items: center; gap: 15px; }
 .dev-name { font-weight: bold; font-size: 15px; color: var(--text-primary); }
 .dev-desc { font-size: 12px; color: var(--text-tertiary); }
-
 .dev-actions { display: flex; gap: 10px; align-items: center; }
-
 .footer-divider { margin: 20px 0; background-color: var(--border-main); }
-
 .app-info {
   text-align: center; color: var(--text-tertiary); font-size: 12px;
   display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
 .app-name { display: flex; align-items: center; gap: 6px; font-weight: bold; color: var(--text-primary); font-size: 14px; }
-
 .license-declaration {
-  margin-top: 8px;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  line-height: 1.4;
-  max-width: 300px;
-  opacity: 0.8;
+  margin-top: 8px; font-size: 10px; color: var(--text-tertiary);
+  line-height: 1.4; max-width: 300px; opacity: 0.8;
 }
 
-/* 通用弹窗内容 */
+/* Modals */
+.scan-modal-content { padding: 10px 0; }
+.stat-panel { 
+  background: var(--bg-sidebar); border: 1px solid var(--border-main);
+  border-radius: 8px; margin-bottom: 20px; 
+}
+.stat-row { display: flex; justify-content: space-around; }
+.tip-box { padding: 12px; border-radius: 8px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.tip-box.warning { background: rgba(255, 159, 10, 0.1); color: #FF9F0A; }
+.tip-box.success { background: rgba(48, 209, 88, 0.1); color: #30D158; }
 .modal-content { padding: 10px 0; }
 .path-compare { 
-  background: var(--bg-sidebar); 
-  color: var(--text-primary);
+  background: var(--bg-sidebar); color: var(--text-primary);
   padding: 8px; border-radius: 6px; font-size: 12px; word-break: break-all; 
   font-family: monospace; border: 1px solid var(--border-main);
 }

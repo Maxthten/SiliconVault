@@ -26,14 +26,15 @@ import {
   ArrowForward, TimeOutline, DocumentTextOutline, ArchiveOutline
 } from '@vicons/ionicons5'
 
-// 组件引入
 import ExportWizardModal from '../components/ExportWizardModal.vue'
 import ImportConflictModal from '../components/ImportConflictModal.vue'
 import CsvImportModal from '../components/CsvImportModal.vue'
+import { useI18n } from '../utils/i18n'
 
 import type { ScanResult } from '../../../preload/index'
 
 const message = useMessage()
+const { t } = useI18n()
 
 // 状态管理
 const isProcessing = ref(false)
@@ -56,18 +57,18 @@ const handleExportLogs = async (e: Event) => {
   e.stopPropagation() 
   try {
     const logs = await window.api.getLogs()
-    if (!logs || logs.length === 0) return message.warning('暂无日志')
+    if (!logs || logs.length === 0) return message.warning(t('dataCenter.messages.noLogs'))
     
     const csv = Papa.unparse(logs)
     const success = await window.api.exportData({
-      title: '导出操作日志',
+      title: t('dataCenter.export.logsTitle'),
       filename: `SystemLogs_${new Date().toISOString().split('T')[0]}.csv`,
       content: csv
     })
-    if (success) message.success('日志导出成功')
+    if (success) message.success(t('dataCenter.messages.logsExported'))
     return
   } catch (e) {
-    message.error('导出失败')
+    message.error(t('dataCenter.messages.exportFailed'))
     return
   }
 }
@@ -99,14 +100,14 @@ const handleDownloadCsvTemplate = async (e: Event) => {
     
     const csv = Papa.unparse(templateData)
     const success = await window.api.exportData({
-      title: '保存 CSV 导入模板',
+      title: t('dataCenter.import.saveCsvTitle'),
       filename: 'Inventory_Import_Template.csv',
       content: csv
     })
     
-    if (success) message.success('模板已保存')
+    if (success) message.success(t('dataCenter.messages.templateSaved'))
   } catch (e) {
-    message.error('模板生成失败')
+    message.error(t('dataCenter.messages.templateFailed'))
   }
 }
 
@@ -121,16 +122,16 @@ const handleDownloadSvDataTemplate = async (e: Event) => {
     const fullPath = `${folderPath}${separator}SiliconVault_Template.svdata`
 
     isProcessing.value = true
-    processingText.value = '正在生成标准模板包...'
+    processingText.value = t('dataCenter.status.generatingTemplate')
 
     const res = await window.api.generateTemplate(fullPath)
     
     if (res.success) {
-      message.success('标准资源包模板已生成')
+      message.success(t('dataCenter.messages.bundleTemplateGenerated'))
     }
   } catch (e) {
     console.error(e)
-    message.error('模板生成失败')
+    message.error(t('dataCenter.messages.templateFailed'))
   } finally {
     isProcessing.value = false
   }
@@ -158,7 +159,7 @@ const handleFileChange = async (event: Event) => {
   input.value = '' 
 
   if (!path) {
-    message.error('无法读取文件路径')
+    message.error(t('dataCenter.messages.readPathFailed'))
     return
   }
 
@@ -168,13 +169,13 @@ const handleFileChange = async (event: Event) => {
   } else if (fileName.endsWith('.svdata') || fileName.endsWith('.zip')) {
     handleBundleImport(path)
   } else {
-    message.error('不支持的文件格式')
+    message.error(t('dataCenter.messages.unsupportedFormat'))
   }
 }
 
 const handleBundleImport = async (path: string) => {
   isProcessing.value = true
-  processingText.value = '正在解析资源包...'
+  processingText.value = t('dataCenter.status.analyzingBundle')
   
   try {
     const result = await window.api.scanBundle(path)
@@ -182,7 +183,7 @@ const handleBundleImport = async (path: string) => {
     showConflictModal.value = true
   } catch (e) {
     console.error(e)
-    message.error('资源包解析失败')
+    message.error(t('dataCenter.messages.bundleParseFailed'))
   } finally {
     isProcessing.value = false
   }
@@ -191,7 +192,7 @@ const handleBundleImport = async (path: string) => {
 
 <template>
   <div class="data-center-page">
-    <h2 class="page-title">数据中心</h2>
+    <h2 class="page-title">{{ t('dataCenter.title') }}</h2>
 
     <div class="main-actions">
       
@@ -201,8 +202,8 @@ const handleBundleImport = async (path: string) => {
             <n-icon :component="CloudDownloadOutline" />
           </div>
           <div class="text-content">
-            <div class="title">导出数据</div>
-            <div class="desc">备份库存、项目工程或生成 Excel/CSV 报表</div>
+            <div class="title">{{ t('dataCenter.export.title') }}</div>
+            <div class="desc">{{ t('dataCenter.export.desc') }}</div>
           </div>
           <div class="arrow">
             <n-icon :component="ArrowForward" />
@@ -212,7 +213,7 @@ const handleBundleImport = async (path: string) => {
         <div class="card-footer">
           <n-button text size="small" class="sub-btn" @click="handleExportLogs">
             <template #icon><n-icon :component="TimeOutline" /></template>
-            导出系统日志
+            {{ t('dataCenter.export.logs') }}
           </n-button>
         </div>
       </div>
@@ -246,8 +247,8 @@ const handleBundleImport = async (path: string) => {
             <n-icon :component="CloudUploadOutline" />
           </div>
           <div class="text-content">
-            <div class="title">导入数据</div>
-            <div class="desc">点击或拖入 .csv 表格 / .svdata 资源包</div>
+            <div class="title">{{ t('dataCenter.import.title') }}</div>
+            <div class="desc">{{ t('dataCenter.import.desc') }}</div>
           </div>
         </div>
 
@@ -255,12 +256,12 @@ const handleBundleImport = async (path: string) => {
           <div class="template-btns">
             <n-button text size="small" class="sub-btn" @click="handleDownloadCsvTemplate">
               <template #icon><n-icon :component="DocumentTextOutline" /></template>
-              CSV 模板
+              {{ t('dataCenter.import.csvTemplate') }}
             </n-button>
             <div class="divider"></div>
             <n-button text size="small" class="sub-btn" @click="handleDownloadSvDataTemplate">
               <template #icon><n-icon :component="ArchiveOutline" /></template>
-              SVData 模板
+              {{ t('dataCenter.import.svdataTemplate') }}
             </n-button>
           </div>
         </div>
@@ -273,19 +274,20 @@ const handleBundleImport = async (path: string) => {
     <ImportConflictModal 
       v-model:show="showConflictModal" 
       :scan-result="currentScanResult" 
-      @confirm="message.success('导入完成')"
+      @confirm="message.success(t('dataCenter.messages.importCompleted'))"
     />
 
     <CsvImportModal 
       v-model:show="showCsvModal" 
       :file="currentCsvFile"
-      @success="message.success('CSV 导入成功')"
+      @success="message.success(t('dataCenter.messages.csvImportSuccess'))"
     />
 
   </div>
 </template>
 
 <style scoped>
+/* 样式保持不变，此处省略 */
 .data-center-page {
   padding: 40px; height: 100vh; display: flex; flex-direction: column;
   background: transparent; 
@@ -312,10 +314,9 @@ const handleBundleImport = async (path: string) => {
 }
 
 .action-card:hover {
-  background: var(--bg-card); /* 保持背景，利用边框和位移做交互 */
+  background: var(--bg-card); 
   border-color: var(--border-hover);
   transform: translateY(-5px);
-  /* 亮色模式下增加阴影深度 */
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); 
 }
 

@@ -27,6 +27,7 @@ import {
 } from '@vicons/ionicons5'
 import CategoryRuleModal from './CategoryRuleModal.vue'
 import { VueDraggable } from 'vue-draggable-plus'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const props = defineProps<{
   show: boolean
@@ -35,6 +36,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
+const { t } = useI18n()
 
 // 表单数据定义
 const form = ref({
@@ -51,7 +53,8 @@ const form = ref({
 })
 
 const categoryOptions = ref<{ label: string, value: string }[]>([])
-const title = computed(() => props.editData ? '修改元件' : '新元件入库')
+// 标题国际化
+const title = computed(() => props.editData ? t('editDialog.titleEdit') : t('editDialog.titleAdd'))
 const isUploading = ref(false)
 const isDragOver = ref(false)
 
@@ -63,7 +66,7 @@ const currentRule = ref({
 })
 const showRuleModal = ref(false)
 const autoFormat = ref(true)
-const FORMAT_CATS = ['电阻', '电容', '电感']
+const FORMAT_CATS = ['电阻', '电容', '电感'] // 业务逻辑常量，不翻译
 
 // --- 文件上传处理 ---
 
@@ -119,14 +122,13 @@ const processFiles = async (files: File[]) => {
   isUploading.value = true
   
   let successCount = 0
-  const group = 'inventory' // 指定模块名称
-  const category = form.value.category || 'uncategorized' // 获取当前分类
+  const group = 'inventory' 
+  const category = form.value.category || 'uncategorized' 
 
   try {
     for (const file of files) {
       let newFilename = ''
       
-      // Electron 环境下 File 对象包含 path 属性
       const sourcePath = (file as any).path
 
       if (sourcePath) {
@@ -138,7 +140,6 @@ const processFiles = async (files: File[]) => {
         newFilename = await window.api.saveBuffer(arrayBuffer, file.name || 'screenshot.png', group, category)
       }
 
-      // 根据扩展名分类存入表单
       const lowerName = newFilename.toLowerCase()
       if (lowerName.endsWith('.pdf')) {
         form.value.datasheet_paths.push(newFilename)
@@ -149,14 +150,15 @@ const processFiles = async (files: File[]) => {
     }
 
     if (successCount > 0) {
-      message.success(`成功添加 ${successCount} 个文件`)
+      // 使用参数化翻译
+      message.success(t('editDialog.upload.success', { count: successCount }))
     } else {
-      message.warning('未识别到有效文件')
+      message.warning(t('editDialog.upload.noValidFile'))
     }
 
   } catch (e) {
     console.error(e)
-    message.error('文件处理失败')
+    message.error(t('editDialog.upload.failed'))
   } finally {
     isUploading.value = false
   }
@@ -175,6 +177,8 @@ const formatElectronicValue = (val: string, cat: string) => {
   const match = res.match(shiftRegex)
   if (match) res = `${match[1]}.${match[3]}${match[2]}`
   res = res.replace(/K/g, 'k').replace(/P/g, 'p').replace(/N/g, 'n').replace(/[uU]/g, 'µ')
+  
+  // 这些逻辑依赖数据库的中文分类名，暂时保留中文判断
   if (cat === '电阻' || cat === '保险丝') {
     res = res.replace(/(r|ohm|Ω)$/i, 'R')
     if (/[\dkmM]$/.test(res)) res += 'R'
@@ -232,6 +236,7 @@ watch(() => props.show, async (newVal) => {
         datasheet_paths: Array.isArray(docs) ? docs : []
       }
     } else {
+      // 默认分类保留中文，因为对应数据库
       form.value = {
         id: undefined, category: form.value.category || '电阻', name: '', value: '', package: '', quantity: 0, location: '', min_stock: 10,
         image_paths: [], datasheet_paths: []
@@ -246,7 +251,7 @@ watch(() => form.value.category, () => { loadRule() })
 const handleSave = async () => {
   handleValueBlur()
   if (!form.value.name && !form.value.value) { 
-    message.warning('请至少填写核心参数或型号')
+    message.warning(t('editDialog.validation.required'))
     return 
   }
   
@@ -258,7 +263,7 @@ const handleSave = async () => {
   }
 
   await window.api.upsertItem(payload)
-  message.success(props.editData ? '修改成功' : '入库成功')
+  message.success(props.editData ? t('messages.success.saved') : t('messages.success.saved'))
   emit('update:show', false)
   emit('refresh')
 }
@@ -290,8 +295,8 @@ const handleSave = async () => {
         >
           <div class="zone-content">
             <n-icon size="32" :component="CloudUploadOutline" class="upload-icon" />
-            <div class="hint-main">点击、拖拽或粘贴 (Ctrl+V) 上传</div>
-            <div class="hint-sub">支持图片 (JPG, PNG, WEBP) 和 PDF 文档</div>
+            <div class="hint-main">{{ t('editDialog.upload.hintMain') }}</div>
+            <div class="hint-sub">{{ t('editDialog.upload.hintSub') }}</div>
           </div>
           <n-spin v-if="isUploading" class="upload-spin" />
         </div>
@@ -308,14 +313,14 @@ const handleSave = async () => {
               <div class="remove-btn" @click.stop="removeImage(index)">
                 <n-icon :component="CloseCircle" />
               </div>
-              <div v-if="index === 0" class="cover-tag">封面</div>
+              <div v-if="index === 0" class="cover-tag">{{ t('editDialog.upload.cover') }}</div>
             </div>
           </VueDraggable>
 
           <div class="doc-list" v-if="form.datasheet_paths.length > 0">
             <div v-for="(path, index) in form.datasheet_paths" :key="path" class="media-item doc-item">
               <n-icon :component="DocumentTextOutline" color="#ff4d4f" size="20" />
-              <span class="doc-name">{{ path.split('/').pop()?.replace(/^\d+_/, '') || '文档' }}</span>
+              <span class="doc-name">{{ path.split('/').pop()?.replace(/^\d+_/, '') || t('editDialog.upload.document') }}</span>
               <div class="remove-btn doc-remove" @click.stop="removeDoc(index)">
                 <n-icon :component="CloseCircle" />
               </div>
@@ -325,12 +330,12 @@ const handleSave = async () => {
       </div>
 
       <n-form class="main-form">
-        <n-form-item-row label="分类">
+        <n-form-item-row :label="t('inventory.category')">
           <div class="cat-row">
             <n-select
               v-model:value="form.category"
               filterable tag
-              placeholder="选择或输入新增..."
+              :placeholder="t('editDialog.categoryPlaceholder')"
               :options="categoryOptions"
               class="cat-select"
             />
@@ -340,7 +345,7 @@ const handleSave = async () => {
                   <template #icon><n-icon :component="SettingsOutline" /></template>
                 </n-button>
               </template>
-              设置字段名称
+              {{ t('editDialog.fieldSettings') }}
             </n-tooltip>
           </div>
         </n-form-item-row>
@@ -357,7 +362,7 @@ const handleSave = async () => {
                   @click="autoFormat = !autoFormat"
                 >
                   <n-icon :component="FlashOutline" class="tag-icon" />
-                  <span class="tag-text">标准化</span>
+                  <span class="tag-text">{{ t('editDialog.standardize') }}</span>
                 </div>
               </div>
             </template>
@@ -375,15 +380,15 @@ const handleSave = async () => {
 
         <div class="row-2">
           <n-form-item-row :label="currentRule.packageLabel">
-            <n-input v-model:value="form.package" placeholder="选填" />
+            <n-input v-model:value="form.package" :placeholder="t('editDialog.optional')" />
           </n-form-item-row>
-          <n-form-item-row label="存放位置">
-            <n-input v-model:value="form.location" placeholder="例如：A01-3" />
+          <n-form-item-row :label="t('editDialog.location')">
+            <n-input v-model:value="form.location" :placeholder="t('editDialog.locationPlaceholder')" />
           </n-form-item-row>
         </div>
 
         <div class="row-2">
-          <n-form-item-row label="库存数量">
+          <n-form-item-row :label="t('editDialog.quantity')">
             <n-input-number 
               v-model:value="form.quantity" 
               :min="0" 
@@ -392,12 +397,12 @@ const handleSave = async () => {
             />
           </n-form-item-row>
 
-          <n-form-item-row label="警戒库存">
+          <n-form-item-row :label="t('editDialog.minStock')">
             <n-input-number 
               v-model:value="form.min_stock" 
               :min="0" 
               class="full-width"
-              placeholder="默认 10"
+              :placeholder="t('editDialog.default10')"
             >
               <template #prefix>
                 <n-icon :component="AlertCircleOutline" color="#f2c97d" />
@@ -409,9 +414,9 @@ const handleSave = async () => {
 
       <template #footer>
         <div class="footer-btns">
-          <n-button class="btn-cancel" @click="emit('update:show', false)">取消</n-button>
+          <n-button class="btn-cancel" @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
           <n-button type="primary" class="btn-save" @click="handleSave" :loading="isUploading">
-            {{ editData ? '保存' : '入库' }}
+            {{ editData ? t('common.save') : t('common.add') }}
           </n-button>
         </div>
       </template>
@@ -426,16 +431,15 @@ const handleSave = async () => {
 </template>
 
 <style scoped>
+/* 样式保持不变 */
 .ios-modal-card { 
   width: 500px; 
-  /* 背景颜色变量化 */
   background-color: var(--bg-modal); 
   border-radius: 16px; 
   box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* 亮色模式下阴影减淡 */
 :global([data-theme="light"]) .ios-modal-card {
   box-shadow: 0 20px 40px rgba(0,0,0,0.15);
 }
@@ -446,7 +450,6 @@ const handleSave = async () => {
 
 .drop-zone {
   position: relative;
-  /* 上传背景变量化 */
   background: rgba(255, 255, 255, 0.03);
   border: 2px dashed rgba(255, 255, 255, 0.15);
   border-radius: 12px;
@@ -457,7 +460,6 @@ const handleSave = async () => {
   outline: none;
 }
 
-/* 亮色模式覆写 */
 :global([data-theme="light"]) .drop-zone {
   background: rgba(0, 0, 0, 0.02);
   border-color: rgba(0, 0, 0, 0.1);
@@ -476,19 +478,19 @@ const handleSave = async () => {
 
 .zone-content { pointer-events: none; }
 .upload-icon { 
-  color: var(--text-tertiary); /*图标颜色 */
+  color: var(--text-tertiary); 
   margin-bottom: 8px; transition: color 0.2s; 
 }
 .drop-zone:hover .upload-icon { color: #0A84FF; }
 
 .hint-main { 
   font-size: 14px; 
-  color: var(--text-primary); /* 主提示文字 */
+  color: var(--text-primary); 
   font-weight: 500; margin-bottom: 4px; 
 }
 .hint-sub { 
   font-size: 12px; 
-  color: var(--text-tertiary); /* 副提示文字 */
+  color: var(--text-tertiary); 
 }
 
 .upload-spin {
@@ -502,8 +504,8 @@ const handleSave = async () => {
   width: 70px; height: 70px; 
   position: relative;
   border-radius: 8px; overflow: hidden;
-  border: 1px solid var(--border-main); /* 边框变量化 */
-  background: #000; /* 图片背景保持黑色 */
+  border: 1px solid var(--border-main); 
+  background: #000; 
   cursor: grab;
 }
 .img-item:active { cursor: grabbing; }
@@ -519,14 +521,13 @@ const handleSave = async () => {
 .doc-list { display: flex; flex-direction: column; gap: 8px; }
 .doc-item {
   display: flex; align-items: center; gap: 10px;
-  /* 文档背景自适应 */
   background: var(--border-main);
   padding: 8px 12px; border-radius: 8px;
   position: relative;
 }
 .doc-name { 
   font-size: 13px; 
-  color: var(--text-primary); /* 文字颜色 */
+  color: var(--text-primary); 
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
 }
 
@@ -542,11 +543,10 @@ const handleSave = async () => {
 
 .doc-remove { 
   position: static; opacity: 0.5; background: transparent; 
-  color: var(--text-secondary); /* 删除按钮颜色 */
+  color: var(--text-secondary); 
 }
 .doc-remove:hover { opacity: 1; background: transparent; color: #FF453A; }
 
-/* 深度选择器颜色*/
 :deep(.n-card-header__main) { 
   color: var(--text-primary) !important; 
   font-weight: 700; 
@@ -567,7 +567,6 @@ const handleSave = async () => {
 .smart-tag {
   display: flex; align-items: center; gap: 4px; padding: 2px 8px;
   border-radius: 6px; 
-  /* 标准化按钮背景 */
   background-color: var(--border-main); 
   color: var(--text-secondary);
   cursor: pointer; transition: all 0.3s; user-select: none; font-size: 11px; font-weight: bold;

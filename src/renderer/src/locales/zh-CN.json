@@ -1,0 +1,541 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "confirm": "确认",
+    "search": "搜索",
+    "edit": "编辑",
+    "add": "新增",
+    "actions": "操作",
+    "noData": "暂无数据",
+    "refresh": "刷新",
+    "back": "返回",
+    "browse": "浏览",
+    "unnamed": "未命名",
+    "noDescription": "无备注",
+    "unknown": "未知",
+    "change": "更改"
+  },
+  "sidebar": {
+    "inventory": "库存管理",
+    "bom": "项目 BOM",
+    "replenish": "补货中心",
+    "urgent": "(急需!)",
+    "consumption": "消耗看板",
+    "data": "数据中心",
+    "logs": "操作历史",
+    "settings": "系统设置"
+  },
+  "inventory": {
+    "title": "库存管理",
+    "category": "分类",
+    "package": "封装",
+    "deleteConfirm": "删除后无法恢复，确定吗？",
+    "allCategories": "全部分类",
+    "allPackages": "全部封装",
+    "clickToOpen": "点击打开原图",
+    "relatedProjects": "关联项目",
+    "viewAll": "查看全部"
+  },
+  "editDialog": {
+    "titleEdit": "修改元件",
+    "titleAdd": "新元件入库",
+    "upload": {
+      "hintMain": "点击、拖拽或粘贴 (Ctrl+V) 上传",
+      "hintSub": "支持图片 (JPG, PNG, WEBP) 和 PDF 文档",
+      "success": "成功添加 {count} 个文件",
+      "noValidFile": "未识别到有效文件",
+      "failed": "文件处理失败",
+      "cover": "封面",
+      "document": "文档"
+    },
+    "categoryPlaceholder": "选择或输入新增...",
+    "fieldSettings": "设置字段名称",
+    "standardize": "标准化",
+    "optional": "选填",
+    "location": "存放位置",
+    "locationPlaceholder": "例如：A01-3",
+    "quantity": "库存数量",
+    "minStock": "警戒库存",
+    "default10": "默认 10",
+    "validation": {
+      "required": "请至少填写核心参数或型号"
+    }
+  },
+  "categoryRule": {
+    "title": "🛠️ 布局配置",
+    "fields": {
+      "value": "核心数值",
+      "name": "型号/名称",
+      "package": "封装",
+      "location": "位置"
+    },
+    "availableFields": "可用字段",
+    "dragHint": "拖拽放入右侧",
+    "allUsed": "已全部使用",
+    "preview": "卡片布局预览 (2x2 网格)",
+    "slots": {
+      "mainTitle": "主标题",
+      "tag": "标签",
+      "subTitle": "副标题",
+      "note": "附注"
+    },
+    "rename": {
+      "title": "字段名称重命名 (可选)",
+      "valueLabel": "Value名称",
+      "valuePlaceholder": "默认: 核心数值",
+      "nameLabel": "Name名称",
+      "namePlaceholder": "默认: 型号/名称",
+      "packageLabel": "Package名称",
+      "packagePlaceholder": "默认: 封装"
+    },
+    "reset": "恢复默认",
+    "apply": "应用配置",
+    "messages": {
+      "loadFailed": "加载配置失败",
+      "layoutEmpty": "卡片不能完全为空",
+      "updated": "已更新 [{category}] 布局",
+      "resetSuccess": "已恢复默认设置",
+      "resetFailed": "重置失败"
+    }
+  },
+  "batchEdit": {
+    "sourceList": "库存列表",
+    "todoList": "待执行清单",
+    "searchPlaceholder": "搜索型号/封装...",
+    "stock": "库存",
+    "current": "现存",
+    "clear": "清空",
+    "execute": "确认执行 ({count})",
+    "notFound": "未找到相关元件",
+    "emptyHint": "从左侧添加<br>或新建元件",
+    "mode": {
+      "add": "入库",
+      "sub": "消耗"
+    },
+    "messages": {
+      "autoAdded": "已自动添加: {name}",
+      "updateSuccess": "成功更新 {count} 个元件库存",
+      "updateFailed": "批量执行失败"
+    },
+    "warning": {
+      "title": "库存不足警告",
+      "content": "以下 {count} 个元件库存将被扣减为负数（透支）：",
+      "more": "等共 {count} 个",
+      "confirm": "确定要继续吗？",
+      "positive": "确认透支"
+    }
+  },
+  "bom": {
+    "searchPlaceholder": "搜索项目...",
+    "noProjects": "暂无项目",
+    "clearFilter": "清除筛选",
+    "clickToPreview": "点击预览",
+    "clickToOpen": "点击打开",
+    "file": "文件",
+    "noDescription": "暂无备注",
+    "productionDeduction": "生产扣减",
+    "dragSort": "拖拽排序",
+    "deleteDialog": {
+      "title": "删除项目",
+      "content": "确定要删除这个 BOM 吗？"
+    },
+    "sortFailed": "排序保存失败"
+  },
+  "bomEdit": {
+    "title": {
+      "edit": "✏️ 编辑 BOM 项目",
+      "create": "🚀 新建 PCB 项目"
+    },
+    "form": {
+      "namePlaceholder": "项目名称 (必填)",
+      "descPlaceholder": "项目备注 (选填)"
+    },
+    "attachments": {
+      "toggleHide": "收起附件",
+      "toggleShow": "附件",
+      "dragHint": "拖拽原理图、PCB、压缩包到这里",
+      "success": "成功添加 {count} 个附件",
+      "failed": "上传失败"
+    },
+    "inventory": {
+      "searchPlaceholder": "搜库存..."
+    },
+    "bomList": {
+      "title": "已选清单",
+      "empty": "请从左侧添加"
+    },
+    "actions": {
+      "save": "保存项目"
+    },
+    "validation": {
+      "nameRequired": "⚠️ 请输入项目名称",
+      "saveSuccess": "✅ 保存项目成功！",
+      "saveFailed": "保存失败: "
+    }
+  },
+  "bomRun": {
+    "title": "生产执行 (库存扣减)",
+    "labels": {
+      "productionQty": "生产数量 (PCS):",
+      "set": "套"
+    },
+    "buttons": {
+      "max": "最大",
+      "confirmDeduct": "确认并扣减"
+    },
+    "stockInfo": {
+      "canBuild": "当前库存支持生产",
+      "limitedBy": "受限于:",
+      "exceedLimit": "⚠️ 数量超出库存上限 (最大 {max} 套)"
+    },
+    "preview": {
+      "title": "扣减清单预览 (共 {count} 种)"
+    },
+    "table": {
+      "info": "元件信息",
+      "current": "当前库存",
+      "deduct": "本次扣减",
+      "remaining": "剩余"
+    },
+    "messages": {
+      "insufficientStock": "当前库存不足以生产任何套件",
+      "deductSuccess": "成功扣减 {count} 种元件库存",
+      "deductFailed": "扣减失败: "
+    },
+    "warnings": {
+      "stockShortage": {
+        "title": "库存不足警告",
+        "content": "以下 {count} 种元件库存不足：\n[ {names} ]\n\n强行扣减将导致库存变为负数，请确认是否继续？",
+        "positive": "继续执行"
+      }
+    },
+    "dialogs": {
+      "confirmProduction": {
+        "title": "确认生产",
+        "content": "确定要扣减 {count} 套 BOM 库存吗？",
+        "positive": "确定扣减"
+      }
+    }
+  },
+  "replenish": {
+    "snooze": {
+      "untilRestart": "直到重启",
+      "inDays": "{count} 天内",
+      "inHours": "{count} 小时内"
+    },
+    "status": {
+      "snoozed": "报警已暂停",
+      "normal": "库存监控正常",
+      "criticalItem": "{count} 项严重缺货",
+      "warningItem": "{count} 项预警",
+      "found": "发现 {items}"
+    },
+    "actions": {
+      "snooze": "不再提醒",
+      "wakeUp": "叫醒它"
+    },
+    "menus": {
+      "snoozeTitle": "暂停报警...",
+      "untilRestart": "直到软件重启",
+      "24Hours": "24 小时内",
+      "customDays": "自定义天数...",
+      "enterDays": "输入暂停天数"
+    },
+    "states": {
+      "sleeping": "监控系统正在休息中",
+      "healthy": "库存非常健康，无需补货"
+    },
+    "headers": {
+      "critical": "🔥 严重耗尽 (立即采购)",
+      "warning": "⚠️ 低库存预警 (建议补充)"
+    },
+    "messages": {
+      "invalidDays": "请输入有效的天数"
+    }
+  },
+  "consumption": {
+    "time": {
+      "today": "今日",
+      "thisWeek": "本周",
+      "thisMonth": "本月",
+      "current": "当前"
+    },
+    "ranges": {
+      "day": "最近 24 小时",
+      "week": "本周趋势",
+      "month": "本月概览"
+    },
+    "debug": {
+      "label": "调试模式",
+      "on": "已开启 (模拟数据)",
+      "off": "已关闭 (真实数据)"
+    },
+    "island": {
+      "analyzing": "正在分析: {name}",
+      "high": "火力全开！{time}消耗 {count} 元件",
+      "medium": "研发推进中 - {time}活跃: {project}",
+      "low": "{time}风平浪静，暂无大量消耗"
+    },
+    "charts": {
+      "trend": "消耗趋势",
+      "composition": "成分构成",
+      "calendar": "研发日历",
+      "ranking": "详细排名",
+      "consumption": "消耗量"
+    }
+  },
+  "dataCenter": {
+    "title": "数据中心",
+    "export": {
+      "title": "导出数据",
+      "desc": "备份库存、项目工程或生成 Excel/CSV 报表",
+      "logs": "导出系统日志",
+      "logsTitle": "导出操作日志"
+    },
+    "import": {
+      "title": "导入数据",
+      "desc": "点击或拖入 .csv 表格 / .svdata 资源包",
+      "csvTemplate": "CSV 模板",
+      "svdataTemplate": "SVData 模板",
+      "saveCsvTitle": "保存 CSV 导入模板"
+    },
+    "status": {
+      "analyzingBundle": "正在解析资源包...",
+      "generatingTemplate": "正在生成标准模板包..."
+    },
+    "messages": {
+      "noLogs": "暂无日志",
+      "logsExported": "日志导出成功",
+      "exportFailed": "导出失败",
+      "templateSaved": "模板已保存",
+      "templateFailed": "模板生成失败",
+      "bundleTemplateGenerated": "标准资源包模板已生成",
+      "readPathFailed": "无法读取文件路径",
+      "unsupportedFormat": "不支持的文件格式",
+      "bundleParseFailed": "资源包解析失败",
+      "importCompleted": "导入完成",
+      "csvImportSuccess": "CSV 导入成功"
+    }
+  },
+  "exportWizard": {
+    "tabs": {
+      "inventory": "库存元件",
+      "project": "工程项目"
+    },
+    "searchPlaceholder": "搜索名称、描述或分类...",
+    "buttons": {
+      "selectAll": "全选列表",
+      "deselectAll": "取消全选",
+      "exportCsv": "仅导出表格 (.csv)",
+      "exportBundle": "导出资源包 (.svdata)"
+    },
+    "noData": "无匹配数据",
+    "status": {
+      "selected": "已选: {count} 项"
+    },
+    "hints": {
+      "project": "智能关联：导出资源包时，系统会自动打包项目关联的 BOM 元器件及其图片/手册。",
+      "bundle": "资源包 (.svdata)：本质是 ZIP 压缩包，包含图片和文档，可被其他用户完整导入。"
+    },
+    "item": {
+      "stockInfo": "{package} · 库存: {quantity}"
+    },
+    "exportCsvTitle": "导出 {type} 表格",
+    "messages": {
+      "csvSuccess": "表格导出成功",
+      "bundleSuccess": "打包成功！包含 {count} 项数据及关联文件",
+      "bundleFailed": "打包失败，请检查控制台详情"
+    }
+  },
+  "importConflict": {
+    "title": "冲突解决向导",
+    "summary": {
+      "detected": "检测到",
+      "conflicts": "个冲突项",
+      "newItems": "另有 {count} 个新项将自动导入。"
+    },
+    "tabs": {
+      "inventory": "库存冲突",
+      "projects": "项目冲突"
+    },
+    "noConflicts": "无冲突项",
+    "batch": {
+      "label": "批量操作：",
+      "keep": "全部保留副本",
+      "skip": "全部跳过",
+      "overwrite": "全部覆盖"
+    },
+    "badges": {
+      "resourceChange": "资源变动",
+      "fileChange": "文件变动",
+      "bundle": "资源包",
+      "local": "本机"
+    },
+    "item": {
+      "name": "名称",
+      "value": "值"
+    },
+    "fields": {
+      "stock": "库存"
+    },
+    "strategies": {
+      "keepBoth": "保留两者",
+      "keepBothTip": "自动重命名",
+      "skip": "跳过",
+      "skipTip": "保留本机数据",
+      "overwrite": "覆盖",
+      "overwriteTip": "更新本机信息"
+    },
+    "footerTip": "⚠️ 注意：导入仅同步元器件基本信息（图片/手册）。库存数量将保留本地现状（覆盖时）或归零（新增时），不会应用资源包中的库存。",
+    "actions": {
+      "execute": "执行导入"
+    },
+    "messages": {
+      "failed": "导入失败"
+    }
+  },
+  "csvImport": {
+    "title": "CSV 导入向导",
+    "strategyLabel": "重复数据策略：",
+    "strategies": {
+      "skip": "跳过 (保留旧数据)",
+      "keepBoth": "保留两者 (生成副本)",
+      "overwrite": "完全覆盖信息"
+    },
+    "status": {
+      "parsing": "正在解析表格...",
+      "empty": "暂无数据或解析失败"
+    },
+    "actions": {
+      "import": "确认导入数据库"
+    },
+    "messages": {
+      "parseWarning": "CSV 解析存在部分格式警告，请仔细核对预览",
+      "readFailed": "CSV 读取失败",
+      "importFailed": "写入数据库失败",
+      "parseSuccess": "共解析到 <strong>{count}</strong> 条数据。请检查下方列名是否正确识别。",
+      "moreItems": "... 还有 {count} 条数据未显示",
+      "success": "导入完成：成功 {success} 条，跳过/失败 {skipped} 条"
+    }
+  },
+  "operationLog": {
+    "title": "时光机",
+    "searchPlaceholder": "搜索操作记录...",
+    "filters": {
+      "all": "全部操作"
+    },
+    "types": {
+      "stock": "库存变动",
+      "create": "新增元件",
+      "update": "修改信息",
+      "delete": "删除操作",
+      "import": "批量导入",
+      "export": "数据导出",
+      "record": "记录"
+    },
+    "prefixes": {
+      "create": "新增",
+      "update": "修改",
+      "delete": "删除",
+      "stock": "库存"
+    },
+    "dialog": {
+      "undoTitle": "时光倒流",
+      "undoConfirm": "确定要撤销 \"{title}\" 吗？\n撤销后，数据将恢复到操作前的状态。",
+      "undoPositive": "立即撤销"
+    },
+    "messages": {
+      "loadFailed": "无法读取时光机日志",
+      "importUndoWarning": "批量导入包含大量数据变更，不支持单步撤销",
+      "undoSuccess": "已成功撤销",
+      "undoFailed": "撤销失败：可能原数据依赖已丢失"
+    },
+    "empty": "没有找到相关记录"
+  },
+  "settings": {
+    "title": "系统设置",
+    "subtitle": "偏好设置与数据管理",
+    "groups": {
+      "interface": "界面与外观",
+      "storage": "数据与备份",
+      "advanced": "高级维护",
+      "about": "关于"
+    },
+    "language": "显示语言",
+    "languageDesc": "切换软件的界面语言",
+    "appearance": {
+      "animation": "页面转场动画",
+      "animationDesc": "决定页面切换时的视觉流畅度与速度",
+      "animationPlaceholder": "选择切换动画",
+      "fast": "极速",
+      "normal": "正常",
+      "slow": "优雅 (慢)"
+    },
+    "storage": {
+      "path": "数据存储位置",
+      "changePath": "迁移数据...",
+      "autoBackup": "自动备份",
+      "backupDesc": "定期备份数据库，防止意外丢失",
+      "frequency": "备份频率",
+      "maxFiles": "保留份数",
+      "freqExit": "每次退出时",
+      "freq30m": "每 30 分钟",
+      "freq1h": "每 1 小时",
+      "freq4h": "每 4 小时",
+      "freqDesc": "仅在数据发生变更时触发",
+      "maxFilesDesc": "滚动删除旧备份，节省空间",
+      "backupPathLabel": "备份存储位置",
+      "defaultPath": "默认路径...",
+      "currentLocation": "当前存储位置",
+      "locationDesc": "元器件数据库及文件仓库"
+    },
+    "advanced": {
+      "cleanAssets": "冗余文件清理",
+      "cleanAssetsDesc": "扫描 assets 目录下未被引用的图片和文档，释放存储空间。",
+      "scan": "扫描",
+      "vacuum": "数据库深度优化",
+      "vacuumDesc": "清理孤立的 BOM 关联数据，并执行 VACUUM 重组数据库文件。",
+      "execute": "立即优化"
+    },
+    "scan": {
+      "title": "扫描结果",
+      "junkFiles": "发现垃圾文件",
+      "unit": "个",
+      "freedSpace": "可释放空间",
+      "warning": "这些文件未被数据库中的任何元器件或项目引用。删除操作不可逆，请确认。",
+      "success": "太棒了！您的数据存储非常干净，没有发现冗余文件。",
+      "cleanNow": "立即清理"
+    },
+    "dialogs": {
+      "migrationTitle": "⚠️ 数据迁移确认",
+      "migrationDesc": "您即将把所有数据从：",
+      "migrationWarning": "注意：迁移完成后应用将自动重启。",
+      "migrationConfirmBtn": "开始迁移并重启"
+    },
+    "messages": {
+      "langChanged": "语言已切换",
+      "saved": "设置已保存",
+      "pathSelected": "新路径已选中",
+      "vacuumSuccess": "数据库优化完成",
+      "opFailed": "操作失败",
+      "resetSuccess": "系统已重置"
+    }
+  },
+  "messages": {
+    "success": {
+      "deleted": "已删除",
+      "saved": "保存成功",
+      "exported": "导出成功"
+    },
+    "error": {
+      "loadFailed": "加载失败",
+      "deleteFailed": "删除失败"
+    },
+    "warning": {
+      "title": "警告",
+      "selectAtLeastOne": "请至少选择一项"
+    }
+  }
+}

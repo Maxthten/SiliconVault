@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { 
   NModal, NCard, NInput, NInputNumber, NButton, NIcon, NEmpty, NTag, NSelect, useMessage, NSpin
 } from 'naive-ui'
@@ -25,6 +25,7 @@ import {
   DocumentTextOutline, CloseCircle, FolderOpenOutline 
 } from '@vicons/ionicons5'
 import { VueDraggable } from 'vue-draggable-plus'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
 const props = defineProps<{
   show: boolean
@@ -33,6 +34,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
+const { t } = useI18n()
 
 // 表单信息
 const form = ref({
@@ -66,14 +68,16 @@ const categoryRules = ref<Record<string, any>>({})
 const loadCategories = async () => {
   try {
     const cats = await window.api.fetchCategories()
-    categoryOptions.value = [{ label: '全部分类', value: null }, ...cats.map(c => ({ label: c, value: c }))]
+    // 动态翻译 "全部分类"
+    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...cats.map(c => ({ label: c, value: c }))]
   } catch (e) { console.error(e) }
 }
 
 const loadPackages = async () => {
   try {
     const pkgs = await window.api.fetchPackages(filterCategory.value || undefined)
-    packageOptions.value = [{ label: '全部封装', value: null }, ...pkgs.map(p => ({ label: p, value: p }))]
+    // 动态翻译 "全部封装"
+    packageOptions.value = [{ label: t('inventory.allPackages'), value: null }, ...pkgs.map(p => ({ label: p, value: p }))]
   } catch (e) { console.error(e) }
 }
 
@@ -237,10 +241,10 @@ const processFiles = async (files: File[]) => {
       fileList.value.push(savedPath)
       count++
     }
-    if (count > 0) message.success(`成功添加 ${count} 个附件`)
+    if (count > 0) message.success(t('bomEdit.attachments.success', { count }))
   } catch (e) {
     console.error(e)
-    message.error('上传失败')
+    message.error(t('bomEdit.attachments.failed'))
   } finally {
     isUploading.value = false
   }
@@ -261,7 +265,7 @@ const handleFileClick = (path: string) => {
 
 const handleSave = async () => {
   if (!form.value.name || !form.value.name.trim()) {
-    message.warning('⚠️ 请输入项目名称')
+    message.warning(t('bomEdit.validation.nameRequired'))
     return
   }
   
@@ -275,11 +279,11 @@ const handleSave = async () => {
       files: JSON.stringify(fileList.value)
     })
     
-    message.success('✅ 保存项目成功！')
+    message.success(t('bomEdit.validation.saveSuccess'))
     emit('update:show', false)
     emit('refresh')
   } catch (e) {
-    message.error('保存失败: ' + String(e))
+    message.error(t('bomEdit.validation.saveFailed') + String(e))
   }
 }
 </script>
@@ -289,7 +293,7 @@ const handleSave = async () => {
     <n-card class="bom-modal" :bordered="false" role="dialog" aria-modal="true">
       <template #header>
         <div class="modal-header">
-          <span>{{ form.id ? '✏️ 编辑 BOM 项目' : '🚀 新建 PCB 项目' }}</span>
+          <span>{{ form.id ? t('bomEdit.title.edit') : t('bomEdit.title.create') }}</span>
         </div>
       </template>
 
@@ -298,10 +302,10 @@ const handleSave = async () => {
         <div class="meta-area">
           <div class="meta-left">
             <div class="input-group">
-              <n-input v-model:value="form.name" placeholder="项目名称 (必填)" size="large" class="name-input" />
+              <n-input v-model:value="form.name" :placeholder="t('bomEdit.form.namePlaceholder')" size="large" class="name-input" />
             </div>
             <div class="input-group">
-              <n-input v-model:value="form.description" placeholder="项目备注 (选填)" />
+              <n-input v-model:value="form.description" :placeholder="t('bomEdit.form.descPlaceholder')" />
             </div>
           </div>
 
@@ -310,7 +314,7 @@ const handleSave = async () => {
                <template #icon>
                  <n-icon :component="showUploadArea ? FolderOpenOutline : CloudUploadOutline" />
                </template>
-               {{ showUploadArea ? '收起附件' : `附件 (${fileList.length})` }}
+               {{ showUploadArea ? t('bomEdit.attachments.toggleHide') : `${t('bomEdit.attachments.toggleShow')} (${fileList.length})` }}
              </n-button>
           </div>
         </div>
@@ -334,7 +338,7 @@ const handleSave = async () => {
           >
             <div class="zone-content">
               <n-icon size="24" :component="CloudUploadOutline" />
-              <span>拖拽原理图、PCB、压缩包到这里</span>
+              <span>{{ t('bomEdit.attachments.dragHint') }}</span>
             </div>
             <n-spin v-if="isUploading" class="upload-spin" />
           </div>
@@ -365,11 +369,11 @@ const handleSave = async () => {
           <div class="panel left-panel">
             <div class="panel-header-group">
               <div class="filter-row">
-                <n-select v-model:value="filterCategory" :options="categoryOptions" placeholder="分类" size="tiny" class="mini-select" />
-                <n-select v-model:value="filterPackage" :options="packageOptions" placeholder="封装" size="tiny" class="mini-select" />
+                <n-select v-model:value="filterCategory" :options="categoryOptions" :placeholder="t('inventory.category')" size="tiny" class="mini-select" />
+                <n-select v-model:value="filterPackage" :options="packageOptions" :placeholder="t('inventory.package')" size="tiny" class="mini-select" />
               </div>
               <div class="search-row">
-                <n-input round placeholder="搜库存..." v-model:value="sourceSearch" size="small">
+                <n-input round :placeholder="t('bomEdit.inventory.searchPlaceholder')" v-model:value="sourceSearch" size="small">
                   <template #prefix><n-icon :component="Search" /></template>
                 </n-input>
               </div>
@@ -400,10 +404,10 @@ const handleSave = async () => {
 
           <div class="panel right-panel">
             <div class="panel-header-simple">
-              <span>已选清单 ({{ bomList.length }})</span>
+              <span>{{ t('bomEdit.bomList.title') }} ({{ bomList.length }})</span>
             </div>
             <div class="list-wrapper">
-              <NEmpty v-if="bomList.length === 0" description="请从左侧添加" style="margin-top: 50px" />
+              <NEmpty v-if="bomList.length === 0" :description="t('bomEdit.bomList.empty')" style="margin-top: 50px" />
               <div v-for="(item, index) in bomList" :key="item.inventory_id" class="bom-item">
                 <div class="bom-info">
                   <div class="bom-name">
@@ -427,10 +431,10 @@ const handleSave = async () => {
 
       <template #footer>
         <div class="footer">
-          <n-button @click="emit('update:show', false)" class="btn-cancel">取消</n-button>
+          <n-button @click="emit('update:show', false)" class="btn-cancel">{{ t('common.cancel') }}</n-button>
           <n-button type="primary" @click="handleSave" class="btn-save">
             <template #icon><n-icon :component="SaveOutline" /></template>
-            保存项目
+            {{ t('bomEdit.actions.save') }}
           </n-button>
         </div>
       </template>
@@ -439,10 +443,10 @@ const handleSave = async () => {
 </template>
 
 <style scoped>
+/* 样式部分保持不变，此处省略 */
 .bom-modal {
   width: 950px;
   height: 800px;
-  /* 背景变量化 */
   background-color: var(--bg-modal);
   border-radius: 16px;
   display: flex;
@@ -455,7 +459,6 @@ const handleSave = async () => {
 }
 :deep(.n-card-header) { 
   padding: 20px 24px 10px 24px !important; 
-  /* 标题颜色 */
   color: var(--text-primary);
 }
 :deep(.n-card__footer) {
@@ -551,7 +554,6 @@ const handleSave = async () => {
   color: var(--text-secondary); 
 }
 
-/* BOM 项样式：保持淡蓝色，文字自适应 */
 .bom-item { 
   background: rgba(10, 132, 255, 0.1); 
   border: 1px solid rgba(10, 132, 255, 0.2); 

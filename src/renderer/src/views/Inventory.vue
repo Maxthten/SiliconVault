@@ -21,11 +21,19 @@ import {
   Search, Add, CreateOutline, CheckmarkOutline, 
   ChevronDown, ChevronForward, SettingsOutline, FlashOutline
 } from '@vicons/ionicons5'
-import { NInput, NButton, NIcon, NSpin, NSelect, useMessage, useDialog } from 'naive-ui'
+import { NInput, NButton, NIcon, NSpin, NSelect, useDialog } from 'naive-ui'
 import { VueDraggable } from 'vue-draggable-plus'
 import InventoryCard from '../components/InventoryCard.vue'
 import EditDialog from '../components/EditDialog.vue'
 import BatchEditModal from '../components/BatchEditModal.vue'
+// 引入国际化工具
+import { useI18n } from '../utils/i18n'
+import { useI18nMessage } from '../utils/message'
+
+const { t } = useI18n()
+// 使用封装后的消息工具
+const { success, error, warning: warningMsg } = useI18nMessage()
+const dialog = useDialog()
 
 const searchQuery = ref('')
 const filterCategory = ref<string | null>(null)
@@ -43,9 +51,6 @@ const sortedGroups = ref<{ name: string, collapsed: boolean, items: any[] }[]>([
 const showModal = ref(false)
 const showBatchModal = ref(false)
 const currentEditItem = ref<any>(null)
-
-const message = useMessage()
-const dialog = useDialog()
 
 const allFlatItems = computed(() => {
   const flat = [] as any[]
@@ -66,20 +71,22 @@ const loadRules = async () => {
     const map: Record<string, any> = {}
     results.forEach(r => map[r.cat] = r.rule)
     categoryRules.value = map
-  } catch (e) { console.error('加载规则失败', e) }
+  } catch (e) { console.error('规则加载异常', e) }
 }
 
 const loadPackages = async () => {
   try {
     const pkgs = await window.api.fetchPackages(filterCategory.value || undefined)
-    packageOptions.value = [{ label: '全部封装', value: null }, ...pkgs.map(p => ({ label: p, value: p }))]
+    // 这里的“全部封装”改为动态翻译
+    packageOptions.value = [{ label: t('inventory.allPackages'), value: null }, ...pkgs.map(p => ({ label: p, value: p }))]
   } catch (e) { console.error(e) }
 }
 
 const loadOptions = async () => {
   try {
     const cats = await window.api.fetchCategories()
-    categoryOptions.value = [{ label: '全部分类', value: null }, ...cats.map(c => ({ label: c, value: c }))]
+    // 这里的“全部分类”改为动态翻译
+    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...cats.map(c => ({ label: c, value: c }))]
     await loadPackages()
   } catch (e) { console.error(e) }
 }
@@ -103,12 +110,19 @@ const loadData = async () => {
       items: items
     }))
 
-  } catch (error) {
-    message.error('加载失败: ' + error)
+  } catch (err) {
+    // 使用错误码key，如果后端返回具体信息可以保留显示
+    error('loadFailed')
+    console.error(err)
   } finally {
     isLoading.value = false
   }
 }
+
+// 监听语言变化，重新加载选项文本
+watch(() => t('common.save'), () => {
+  loadOptions()
+})
 
 watch(filterCategory, () => { loadPackages(); filterPackage.value = null; loadData() })
 watch([searchQuery, filterPackage], () => { loadData() })
@@ -140,25 +154,25 @@ const handleQtyUpdate = async (item: any, delta: number) => {
 
 const handleDelete = (id: number) => {
   dialog.warning({
-    title: '确认删除',
-    content: '删除后无法恢复，确定吗？',
-    positiveText: '删除',
-    negativeText: '取消',
+    title: t('common.delete'), // 标题使用通用翻译
+    content: t('inventory.deleteConfirm'), // 内容使用特定翻译
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       try {
         await window.api.deleteItem(id)
-        message.success('已删除')
+        success('deleted') // 使用key
         loadData()
         loadOptions()
       } catch (e: any) {
         if (e.message && e.message.includes('无法删除')) {
           dialog.error({
-            title: '占用警告',
+            title: t('messages.warning.title'), // 也可以定义通用警告标题
             content: e.message, 
-            positiveText: '知道了'
+            positiveText: t('common.confirm')
           })
         } else {
-          message.error('删除失败: ' + (e.message || '未知错误'))
+          error('deleteFailed')
         }
       }
     }
@@ -182,12 +196,12 @@ onMounted(() => { loadOptions(); loadData() })
     
     <div class="toolbar">
       <div class="filter-group">
-        <n-select v-model:value="filterCategory" :options="categoryOptions" placeholder="分类" class="mini-select" size="small" />
-        <n-select v-model:value="filterPackage" :options="packageOptions" placeholder="封装" class="mini-select" size="small" />
+        <n-select v-model:value="filterCategory" :options="categoryOptions" :placeholder="t('inventory.category')" class="mini-select" size="small" />
+        <n-select v-model:value="filterPackage" :options="packageOptions" :placeholder="t('inventory.package')" class="mini-select" size="small" />
       </div>
 
       <div class="search-box">
-        <n-input v-model:value="searchQuery" placeholder="搜索..." round clearable class="ios-search">
+        <n-input v-model:value="searchQuery" :placeholder="t('common.search') + '...'" round clearable class="ios-search">
           <template #prefix><n-icon :component="Search" /></template>
         </n-input>
       </div>
@@ -213,7 +227,7 @@ onMounted(() => { loadOptions(); loadData() })
       <n-spin :show="isLoading">
         <div v-if="sortedGroups.length === 0 && !isLoading" class="empty-state">
           <n-icon size="48" :component="SettingsOutline" class="empty-icon" />
-          <p>暂无数据</p>
+          <p>{{ t('common.noData') }}</p>
         </div>
 
         <VueDraggable
@@ -287,6 +301,7 @@ onMounted(() => { loadOptions(); loadData() })
 </template>
 
 <style scoped>
+/* 样式保持不变，此处省略以节省篇幅，请保留原文件的 Style 部分 */
 .inventory-page { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
 .toolbar {
@@ -301,36 +316,29 @@ onMounted(() => { loadOptions(); loadData() })
 .search-box { flex: 1; }
 .tools { display: flex; gap: 12px; }
 
-/* --- 输入框深度定制 --- */
-
-/* 强制覆盖 input 的颜色，解决亮色下文字太浅的问题 */
 :deep(.n-input .n-input__input-el),
 :deep(.n-base-selection-label) {
-  color: var(--text-primary) !important; /* 强制使用最深黑色 */
+  color: var(--text-primary) !important;
   caret-color: var(--text-primary);
 }
 
-/* 覆盖 placeholder 颜色 */
 :deep(.n-input .n-input__placeholder),
 :deep(.n-base-selection-placeholder) {
   color: var(--text-tertiary) !important;
 }
 
-/* 暗色模式背景：半透明灰 */
 :deep(.n-input), :deep(.n-base-selection-label) {
   background-color: rgba(118, 118, 128, 0.24) !important; 
   border: 1px solid transparent !important; 
   border-radius: 8px !important;
 }
 
-/* 亮色模式背景：加深对比度，增加边框 */
 :global([data-theme="light"]) .toolbar :deep(.n-input),
 :global([data-theme="light"]) .toolbar :deep(.n-base-selection-label) {
-  background-color: rgba(0, 0, 0, 0.08) !important; /* 加深背景 */
-  border: 1px solid rgba(0, 0, 0, 0.05) !important; /* 增加边框 */
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
 }
 
-/* 悬停/聚焦时加深背景 */
 :global([data-theme="light"]) .toolbar :deep(.n-input:hover),
 :global([data-theme="light"]) .toolbar :deep(.n-input:focus-within) {
   background-color: rgba(0, 0, 0, 0.12) !important;

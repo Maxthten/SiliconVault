@@ -23,7 +23,9 @@ import {
   DocumentTextOutline, FolderOpenOutline, LinkOutline, ArrowForward
 } from '@vicons/ionicons5'
 import { NIcon, NTag, NButton, NPopover, NCarousel, NDropdown, NSpin } from 'naive-ui'
+import { useI18n } from '../utils/i18n' // 引入国际化
 
+const { t } = useI18n()
 interface Props {
   item: any
   isEditMode?: boolean
@@ -183,7 +185,7 @@ const getStockColor = (qty: number, min: number) => {
               @click="openSystemImage(img.originalPath)"
             >
               <img :src="img.url" class="carousel-img" />
-              <div class="carousel-hint">点击打开原图</div>
+              <div class="carousel-hint">{{ t('inventory.clickToOpen') }}</div>
             </div>
           </n-carousel>
         </div>
@@ -266,7 +268,7 @@ const getStockColor = (qty: number, min: number) => {
         
         <div class="ref-popover-content matte-effect">
           <div class="ref-header">
-            <span>关联项目</span>
+            <span>{{ t('inventory.relatedProjects') }}</span>
             <span class="ref-total">{{ item.ref_count }}</span>
           </div>
           
@@ -287,7 +289,7 @@ const getStockColor = (qty: number, min: number) => {
           </div>
 
           <div v-if="!isLoadingRelated && relatedProjects.length > 0" class="ref-footer" @click="navigateToAllRefs">
-            <span>查看全部筛选</span>
+            <span>{{ t('inventory.viewAll') }}</span>
           </div>
         </div>
       </n-popover>
@@ -319,6 +321,7 @@ const getStockColor = (qty: number, min: number) => {
 </template>
 
 <style scoped>
+/* 样式部分无修改，省略以节省篇幅 */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-main);

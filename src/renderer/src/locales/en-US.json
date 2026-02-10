@@ -1,0 +1,540 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "search": "Search",
+    "edit": "Edit",
+    "add": "Add",
+    "actions": "Actions",
+    "noData": "No Data",
+    "refresh": "Refresh",
+    "back": "Back",
+    "browse": "Browse",
+    "unnamed": "Unnamed",
+    "noDescription": "No description",
+    "unknown": "Unknown",
+    "change": "Change"
+  },
+  "sidebar": {
+    "inventory": "Inventory",
+    "bom": "Projects",
+    "replenish": "Replenish",
+    "urgent": "(Urgent!)",
+    "consumption": "Consumption",
+    "data": "Data Center",
+    "logs": "History",
+    "settings": "Settings"
+  },
+  "inventory": {
+    "title": "Inventory Management",
+    "category": "Category",
+    "package": "Package",
+    "deleteConfirm": "Cannot be recovered after deletion, are you sure?",
+    "allCategories": "All Categories",
+    "allPackages": "All Packages",
+    "clickToOpen": "Click to Open",
+    "relatedProjects": "Related Projects",
+    "viewAll": "View All"
+  },
+  "editDialog": {
+    "titleEdit": "Edit Component",
+    "titleAdd": "New Entry",
+    "upload": {
+      "hintMain": "Click, drag or paste (Ctrl+V) to upload",
+      "hintSub": "Supports images (JPG, PNG, WEBP) and PDF",
+      "success": "Added {count} files successfully",
+      "noValidFile": "No valid files detected",
+      "failed": "File processing failed",
+      "cover": "Cover",
+      "document": "Document"
+    },
+    "categoryPlaceholder": "Select or type to add...",
+    "fieldSettings": "Field Settings",
+    "standardize": "Standardize",
+    "optional": "Optional",
+    "location": "Location",
+    "locationPlaceholder": "e.g., A01-3",
+    "quantity": "Quantity",
+    "minStock": "Alert Threshold",
+    "default10": "Default 10",
+    "validation": {
+      "required": "Please fill in at least the core parameter or model"
+    }
+  },
+  "categoryRule": {
+    "title": "🛠️ Layout Config",
+    "fields": {
+      "value": "Value",
+      "name": "Name/Model",
+      "package": "Package",
+      "location": "Location"
+    },
+    "availableFields": "Available",
+    "dragHint": "Drag to right",
+    "allUsed": "All used",
+    "preview": "Card Preview (2x2 Grid)",
+    "slots": {
+      "mainTitle": "Main Title",
+      "tag": "Tag",
+      "subTitle": "Sub Title",
+      "note": "Note"
+    },
+    "rename": {
+      "title": "Rename Fields (Optional)",
+      "valueLabel": "Value Label",
+      "valuePlaceholder": "Default: Value",
+      "nameLabel": "Name Label",
+      "namePlaceholder": "Default: Name/Model",
+      "packageLabel": "Pkg Label",
+      "packagePlaceholder": "Default: Package"
+    },
+    "reset": "Reset Default",
+    "apply": "Apply",
+    "messages": {
+      "loadFailed": "Load config failed",
+      "layoutEmpty": "Card cannot be empty",
+      "updated": "Updated [{category}] layout",
+      "resetSuccess": "Restored default settings",
+      "resetFailed": "Reset failed"
+    }
+  },
+  "batchEdit": {
+    "sourceList": "Inventory List",
+    "todoList": "To-Do List",
+    "searchPlaceholder": "Search model/package...",
+    "stock": "Stock",
+    "current": "Current",
+    "clear": "Clear",
+    "execute": "Execute ({count})",
+    "notFound": "No items found",
+    "emptyHint": "Add from left<br>or create new",
+    "mode": {
+      "add": "Restock",
+      "sub": "Consume"
+    },
+    "messages": {
+      "autoAdded": "Auto added: {name}",
+      "updateSuccess": "Successfully updated {count} items",
+      "updateFailed": "Batch execution failed"
+    },
+    "warning": {
+      "title": "Stock Shortage Warning",
+      "content": "The following {count} items will be reduced to negative stock (overdraft):",
+      "more": "and {count} more",
+      "confirm": "Are you sure you want to proceed?",
+      "positive": "Confirm Overdraft"
+    }
+  },
+  "bom": {
+    "searchPlaceholder": "Search projects...",
+    "noProjects": "No projects found",
+    "clearFilter": "Clear Filter",
+    "clickToPreview": "Preview",
+    "clickToOpen": "Open",
+    "file": "File",
+    "noDescription": "No description",
+    "productionDeduction": "Production Deduction",
+    "dragSort": "Drag to Sort",
+    "deleteDialog": {
+      "title": "Delete Project",
+      "content": "Are you sure you want to delete this BOM?"
+    },
+    "sortFailed": "Failed to save sort order"
+  },
+  "bomEdit": {
+    "title": {
+      "edit": "✏️ Edit BOM Project",
+      "create": "🚀 New PCB Project"
+    },
+    "form": {
+      "namePlaceholder": "Project Name (Required)",
+      "descPlaceholder": "Description (Optional)"
+    },
+    "attachments": {
+      "toggleHide": "Hide Files",
+      "toggleShow": "Files",
+      "dragHint": "Drag Schematics, PCB, Zip here",
+      "success": "Added {count} files successfully",
+      "failed": "Upload failed"
+    },
+    "inventory": {
+      "searchPlaceholder": "Search stock..."
+    },
+    "bomList": {
+      "title": "Selected List",
+      "empty": "Add from left"
+    },
+    "actions": {
+      "save": "Save Project"
+    },
+    "validation": {
+      "nameRequired": "⚠️ Please enter project name",
+      "saveSuccess": "✅ Project saved successfully!",
+      "saveFailed": "Save failed: "
+    }
+  },
+  "bomRun": {
+    "title": "Production (Stock Deduction)",
+    "labels": {
+      "productionQty": "Production Qty (PCS):",
+      "set": "Sets"
+    },
+    "buttons": {
+      "max": "Max",
+      "confirmDeduct": "Deduct Now"
+    },
+    "stockInfo": {
+      "canBuild": "Can build",
+      "limitedBy": "Limited by:",
+      "exceedLimit": "⚠️ Exceeds limit (Max {max} sets)"
+    },
+    "preview": {
+      "title": "Deduction List ({count} items)"
+    },
+    "table": {
+      "info": "Component Info",
+      "current": "Stock",
+      "deduct": "Deduct",
+      "remaining": "Remain"
+    },
+    "messages": {
+      "insufficientStock": "Insufficient stock to produce any sets",
+      "deductSuccess": "Successfully deducted {count} items",
+      "deductFailed": "Deduction failed: "
+    },
+    "warnings": {
+      "stockShortage": {
+        "title": "Shortage Warning",
+        "content": "Following {count} items are short:\n[ {names} ]\n\nProceeding will result in negative stock. Continue?",
+        "positive": "Proceed"
+      }
+    },
+    "dialogs": {
+      "confirmProduction": {
+        "title": "Confirm Production",
+        "content": "Deduct stock for {count} sets?",
+        "positive": "Confirm"
+      }
+    }
+  },
+  "replenish": {
+    "snooze": {
+      "untilRestart": "Until restart",
+      "inDays": "In {count} days",
+      "inHours": "In {count} hours"
+    },
+    "status": {
+      "snoozed": "Alarm Snoozed",
+      "normal": "Monitor Normal",
+      "criticalItem": "{count} Critical",
+      "warningItem": "{count} Warning",
+      "found": "Found {items}"
+    },
+    "actions": {
+      "snooze": "Snooze",
+      "wakeUp": "Wake Up"
+    },
+    "menus": {
+      "snoozeTitle": "Snooze for...",
+      "untilRestart": "Until Restart",
+      "24Hours": "24 Hours",
+      "customDays": "Custom Days...",
+      "enterDays": "Enter Days"
+    },
+    "states": {
+      "sleeping": "Monitor is sleeping",
+      "healthy": "Inventory is healthy"
+    },
+    "headers": {
+      "critical": "🔥 Critical Depletion (Buy Now)",
+      "warning": "⚠️ Low Stock Warning"
+    },
+    "messages": {
+      "invalidDays": "Please enter valid days"
+    }
+  },
+  "consumption": {
+    "time": {
+      "today": "Today",
+      "thisWeek": "This Week",
+      "thisMonth": "This Month",
+      "current": "Current"
+    },
+    "ranges": {
+      "day": "Last 24 Hours",
+      "week": "Weekly Trend",
+      "month": "Monthly Overview"
+    },
+    "debug": {
+      "label": "Debug Mode",
+      "on": "On (Mock Data)",
+      "off": "Off (Real Data)"
+    },
+    "island": {
+      "analyzing": "Analyzing: {name}",
+      "high": "Full Speed! {count} items consumed {time}",
+      "medium": "R&D Active - {time} Project: {project}",
+      "low": "{time} Calm, no high consumption"
+    },
+    "charts": {
+      "trend": "Consumption Trend",
+      "composition": "Composition",
+      "calendar": "R&D Calendar",
+      "ranking": "Ranking",
+      "consumption": "Quantity"
+    }
+  },
+  "dataCenter": {
+    "title": "Data Center",
+    "export": {
+      "title": "Export Data",
+      "desc": "Backup inventory, projects or generate Excel/CSV reports",
+      "logs": "Export System Logs",
+      "logsTitle": "Export Logs"
+    },
+    "import": {
+      "title": "Import Data",
+      "desc": "Click or drag .csv table / .svdata bundle",
+      "csvTemplate": "CSV Template",
+      "svdataTemplate": "SVData Template",
+      "saveCsvTitle": "Save CSV Import Template"
+    },
+    "status": {
+      "analyzingBundle": "Analyzing bundle...",
+      "generatingTemplate": "Generating template..."
+    },
+    "messages": {
+      "noLogs": "No logs available",
+      "logsExported": "Logs exported successfully",
+      "exportFailed": "Export failed",
+      "templateSaved": "Template saved",
+      "templateFailed": "Template generation failed",
+      "bundleTemplateGenerated": "Standard bundle template generated",
+      "readPathFailed": "Failed to read file path",
+      "unsupportedFormat": "Unsupported file format",
+      "bundleParseFailed": "Bundle analysis failed",
+      "importCompleted": "Import completed",
+      "csvImportSuccess": "CSV import success"
+    }
+  },
+  "exportWizard": {
+    "tabs": {
+      "inventory": "Components",
+      "project": "Projects"
+    },
+    "searchPlaceholder": "Search name, desc or category...",
+    "buttons": {
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All",
+      "exportCsv": "Export Table (.csv)",
+      "exportBundle": "Export Bundle (.svdata)"
+    },
+    "noData": "No matching data",
+    "status": {
+      "selected": "Selected: {count}"
+    },
+    "hints": {
+      "project": "Smart Link: Exporting a bundle will automatically include associated BOM components and their files.",
+      "bundle": "Bundle (.svdata): A ZIP archive containing images and docs, importable by other users."
+    },
+    "item": {
+      "stockInfo": "{package} · Stock: {quantity}"
+    },
+    "exportCsvTitle": "Export {type} Table",
+    "messages": {
+      "csvSuccess": "Table exported successfully",
+      "bundleSuccess": "Bundle success! Included {count} items and files",
+      "bundleFailed": "Bundle failed, check console"
+    }
+  },
+  "importConflict": {
+    "title": "Conflict Wizard",
+    "summary": {
+      "detected": "Detected",
+      "conflicts": "conflicts",
+      "newItems": "plus {count} new items to be imported."
+    },
+    "tabs": {
+      "inventory": "Component Conflicts",
+      "projects": "Project Conflicts"
+    },
+    "noConflicts": "No conflicts found",
+    "batch": {
+      "label": "Batch Actions:",
+      "keep": "Keep Both All",
+      "skip": "Skip All",
+      "overwrite": "Overwrite All"
+    },
+    "badges": {
+      "resourceChange": "Res Change",
+      "fileChange": "File Change",
+      "bundle": "Bundle",
+      "local": "Local"
+    },
+    "item": {
+      "name": "Name",
+      "value": "Value"
+    },
+    "fields": {
+      "stock": "Stock"
+    },
+    "strategies": {
+      "keepBoth": "Keep Both",
+      "keepBothTip": "Auto rename",
+      "skip": "Skip",
+      "skipTip": "Keep local data",
+      "overwrite": "Overwrite",
+      "overwriteTip": "Update local info"
+    },
+    "footerTip": "⚠️ Note: Import only syncs component info (images/docs). Stock quantity will remain local (Overwrite) or zero (New), bundle stock is ignored.",
+    "actions": {
+      "execute": "Execute Import"
+    },
+    "messages": {
+      "failed": "Import failed"
+    }
+  },
+  "csvImport": {
+    "title": "CSV Import Wizard",
+    "strategyLabel": "Duplicate Strategy:",
+    "strategies": {
+      "skip": "Skip (Keep existing)",
+      "keepBoth": "Keep Both (Create copy)",
+      "overwrite": "Overwrite All"
+    },
+    "status": {
+      "parsing": "Parsing table...",
+      "empty": "No data or parse failed"
+    },
+    "actions": {
+      "import": "Confirm Import"
+    },
+    "messages": {
+      "parseWarning": "Parse warnings detected, please check preview carefully",
+      "readFailed": "Failed to read CSV",
+      "importFailed": "Failed to write to database",
+      "parseSuccess": "Parsed <strong>{count}</strong> rows. Please verify column headers below.",
+      "moreItems": "... plus {count} more rows",
+      "success": "Imported: {success} success, {skipped} skipped/failed"
+    }
+  },
+  "operationLog": {
+    "title": "Time Machine",
+    "searchPlaceholder": "Search logs...",
+    "filters": {
+      "all": "All Operations"
+    },
+    "types": {
+      "stock": "Stock Change",
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "import": "Batch Import",
+      "export": "Data Export",
+      "record": "Record"
+    },
+    "prefixes": {
+      "create": "New",
+      "update": "Mod",
+      "delete": "Del",
+      "stock": "Stock"
+    },
+    "dialog": {
+      "undoTitle": "Time Travel",
+      "undoConfirm": "Undo \"{title}\"?\nData will revert to its previous state.",
+      "undoPositive": "Undo Now"
+    },
+    "messages": {
+      "loadFailed": "Failed to load logs",
+      "importUndoWarning": "Batch import cannot be undone in a single step",
+      "undoSuccess": "Undo successful",
+      "undoFailed": "Undo failed: data dependency might be lost"
+    },
+    "empty": "No relevant records found"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Preference & Data Management",
+    "groups": {
+      "interface": "Interface & Appearance",
+      "storage": "Storage & Backup",
+      "advanced": "Advanced Maintenance",
+      "about": "About"
+    },
+    "language": "Display Language",
+    "languageDesc": "Change the interface language",
+    "appearance": {
+      "animation": "Transition Animation",
+      "animationPlaceholder": "Select Animation",
+      "animationDesc": "Controls the visual smoothness and speed of page transitions",
+      "fast": "Fast",
+      "normal": "Normal",
+      "slow": "Elegant (Slow)"
+    },
+    "storage": {
+      "path": "Data Storage Location",
+      "changePath": "Migrate Data...",
+      "autoBackup": "Auto Backup",
+      "backupDesc": "Periodically backup database to prevent data loss",
+      "frequency": "Frequency",
+      "maxFiles": "Retain Count",
+      "freqExit": "On Exit",
+      "freq30m": "Every 30 min",
+      "freq1h": "Every 1 hour",
+      "freq4h": "Every 4 hours",
+      "freqDesc": "Triggered only on changes",
+      "maxFilesDesc": "Rolling deletion of old backups",
+      "backupPathLabel": "Backup Location",
+      "defaultPath": "Default folder...",
+      "currentLocation": "Current Location",
+      "locationDesc": "Component Database & File Repository"
+    },
+    "advanced": {
+      "cleanAssets": "Clean Unused Assets",
+      "cleanAssetsDesc": "Scan and remove unreferenced images/docs to free up space.",
+      "scan": "Scan",
+      "vacuum": "Database Vacuum",
+      "vacuumDesc": "Reclaim unused disk space and optimize performance",
+      "execute": "Run Now"
+    },
+    "scan": {
+      "title": "Scan Results",
+      "junkFiles": "Junk Files Found",
+      "unit": "items",
+      "freedSpace": "Reclaimable Space",
+      "warning": "These files are not referenced by any component or project. Deletion cannot be undone.",
+      "success": "Great! Your data storage is very clean, no redundant files found.",
+      "cleanNow": "Clean Now"
+    },
+    "dialogs": {
+      "migrationTitle": "⚠️ Migration Confirmation",
+      "migrationDesc": "You are about to move all data from:",
+      "migrationWarning": "Note: The application will restart automatically after migration.",
+      "migrationConfirmBtn": "Confirm & Restart"
+    },
+    "messages": {
+      "langChanged": "Language Changed",
+      "saved": "Settings saved",
+      "pathSelected": "New path selected (Migration pending)",
+      "vacuumSuccess": "Database optimized successfully",
+      "opFailed": "Operation failed"
+    }
+  },
+  "messages": {
+    "success": {
+      "deleted": "Deleted",
+      "saved": "Saved successfully",
+      "exported": "Exported successfully"
+    },
+    "error": {
+      "loadFailed": "Load failed",
+      "deleteFailed": "Delete failed"
+    },
+    "warning": {
+      "title": "Warning",
+      "selectAtLeastOne": "Please select at least one item"
+    }
+  }
+}
