@@ -1,16 +1,33 @@
+<!--
+ * SiliconVault - Electronic Component Inventory Management System
+ * Copyright (C) 2026 Maxton Niu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue' 
 import { 
   NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NAvatar, NDivider, NCard, NStatistic,
-  NSwitch, NSelect, NInputNumber, NCollapseTransition, useDialog, NSpace
+  NSwitch, NSelect, NInputNumber, NCollapseTransition, NSpace
 } from 'naive-ui'
 import { 
   FolderOpenOutline, ArrowForwardCircleOutline, 
   SaveOutline, InformationCircleOutline,
   LogoGithub, HeartOutline, CodeSlashOutline, BookOutline,
-  ConstructOutline, TrashBinOutline, LeafOutline, ScanOutline,
+  TrashBinOutline, LeafOutline, ScanOutline,
   CloudUploadOutline, TimeOutline, ColorPaletteOutline, FlashOutline,
-  GlobeOutline, ShieldCheckmarkOutline
+  ShieldCheckmarkOutline
 } from '@vicons/ionicons5'
 
 import localAvatar from '@renderer/assets/icon.png'
@@ -26,7 +43,7 @@ const langOptions = [
   { label: 'English', value: 'en-US' }
 ]
 
-// 恢复使用配置文件中的动画选项，确保功能正常
+// 恢复使用配置文件中的动画选项
 const transitionOptions = ANIMATION_OPTIONS
 
 const backupFreqOptions = [
@@ -124,7 +141,8 @@ onUnmounted(() => {
 })
 
 const handleLangChange = (val: string) => {
-  locale.value = val
+  // 类型断言
+  locale.value = val as 'zh-CN' | 'en-US'
   localStorage.setItem('app_language', val)
   message.success(t('settings.messages.langChanged'))
 }
@@ -259,15 +277,8 @@ onMounted(init)
               v-model:value="locale" 
               :options="langOptions" 
               @update:value="handleLangChange"
-              placeholder="Select Language"
-            >
-              <template #trigger="{ value }">
-                <div class="lang-trigger">
-                  <n-icon :component="GlobeOutline" style="margin-right: 8px" />
-                  {{ langOptions.find(o => o.value === value)?.label }}
-                </div>
-              </template>
-            </n-select>
+              :placeholder="t('settings.language')"
+            />
             <div class="sub-label">{{ t('settings.languageDesc') }}</div>
           </div>
 

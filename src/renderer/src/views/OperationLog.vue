@@ -48,15 +48,16 @@ interface Log {
 const logs = ref<Log[]>([])
 const isLoading = ref(false)
 const searchQuery = ref('')
-const filterType = ref<string | null>(null)
+const filterType = ref<string>('') // 修正初始化为空字符串
 const categoryRules = ref<Record<string, any>>({})
 
 const message = useMessage()
 const dialog = useDialog()
 const { t, locale } = useI18n()
 
-const typeOptions = computed(() => [
-  { label: t('operationLog.filters.all'), value: null },
+// 显式定义返回类型以匹配 SelectOption
+const typeOptions = computed<{ label: string; value: string }[]>(() => [
+  { label: t('operationLog.filters.all'), value: '' },
   { label: t('operationLog.types.stock'), value: 'STOCK' },
   { label: t('operationLog.types.create'), value: 'CREATE' },
   { label: t('operationLog.types.update'), value: 'UPDATE' },
@@ -94,6 +95,7 @@ const loadLogs = async () => {
 
 const filteredLogs = computed(() => {
   return logs.value.filter(log => {
+    // 空字符串表示全部
     const matchType = !filterType.value || log.op_type === filterType.value
     
     const dynamicTitle = getDynamicLogTitle(log)

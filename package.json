@@ -1,7 +1,7 @@
 {
   "name": "siliconvault",
   "productName": "SiliconVault",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "电子元器件库存管理系统",
   "main": "./out/main/index.js",
   "author": "Maxton Niu",

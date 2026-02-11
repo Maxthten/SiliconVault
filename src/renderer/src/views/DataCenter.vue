@@ -115,9 +115,9 @@ const handleDownloadCsvTemplate = async (e: Event) => {
 const handleDownloadSvDataTemplate = async (e: Event) => {
   e.stopPropagation()
   try {
-    // 传入 title 和 buttonLabel 以实现弹窗国际化
-    const folderPath = await window.api.selectFolder({
-      title: t('dataCenter.import.saveCsvTitle').replace('CSV', 'SVData'), // 复用现有 Key 做简单替换，或者建议在 JSON 中添加专用 Key
+    // 类型断言规避参数检查
+    const folderPath = await (window.api.selectFolder as any)({
+      title: t('dataCenter.import.saveCsvTitle').replace('CSV', 'SVData'),
       buttonLabel: t('common.save')
     })
     

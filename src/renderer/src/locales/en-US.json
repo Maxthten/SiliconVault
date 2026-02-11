@@ -553,7 +553,7 @@
       "advanced": "Advanced Maintenance",
       "about": "About"
     },
-    "language": "Display Language",
+    "language": "Display Language/显示语言",
     "languageDesc": "Change the interface language",
     "appearance": {
       "animation": "Transition Animation",
@@ -609,7 +609,8 @@
       "saved": "Settings saved",
       "pathSelected": "New path selected",
       "vacuumSuccess": "Database optimized successfully",
-      "opFailed": "Operation failed"
+      "opFailed": "Operation failed",
+      "resetSuccess": "System reset successfully"
     }
   },
   "messages": {

@@ -1,29 +1,37 @@
+<!--
+ * SiliconVault - Electronic Component Inventory Management System
+ * Copyright (C) 2026 Maxton Niu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, nextTick } from 'vue'
-import { useI18n } from 'vue-i18n' // 引入国际化钩子
+import { useI18n } from 'vue-i18n' 
 import { darkTheme, lightTheme, NConfigProvider, NGlobalStyle, NMessageProvider, NDialogProvider } from 'naive-ui'
 import Sidebar from './components/Sidebar.vue'
 import TitleBar from './components/TitleBar.vue' 
 import { DEFAULT_ANIMATION } from '@renderer/config/animations'
 import { getThemeOverrides } from '@renderer/utils/theme'
 
-const { locale } = useI18n() // 获取当前语言状态
+const { locale } = useI18n() 
 
-// 临时切换语言方法
-const toggleLanguage = () => {
-  locale.value = locale.value === 'zh-CN' ? 'en-US' : 'zh-CN'
-}
-
-// 主题状态
 const isDark = ref(true)
 
-// Naive UI 主题配置
 const currentNaiveTheme = computed(() => (isDark.value ? darkTheme : lightTheme))
 const currentThemeOverrides = computed(() => getThemeOverrides(isDark.value))
 
-
 const toggleTheme = (event?: MouseEvent) => {
-  // 基础切换逻辑
   const switchThemeLogic = () => {
     isDark.value = !isDark.value
     const themeValue = isDark.value ? 'dark' : 'light'
@@ -31,17 +39,14 @@ const toggleTheme = (event?: MouseEvent) => {
     localStorage.setItem('app-theme', themeValue)
   }
 
-  // 降级处理
   // @ts-ignore
   if (!document.startViewTransition || !event) {
     switchThemeLogic()
     return
   }
 
-  // 1. 性能戒严：给 html 加标记
   document.documentElement.classList.add('animating')
 
-  // 2. 计算几何
   const x = event.clientX
   const y = event.clientY
   const endRadius = Math.hypot(
@@ -49,14 +54,12 @@ const toggleTheme = (event?: MouseEvent) => {
     Math.max(y, window.innerHeight - y)
   )
 
-  // 3. 执行视图过渡
   // @ts-ignore
   const transition = document.startViewTransition(async () => {
     switchThemeLogic()
     await nextTick()
   })
 
-  // 4. 自定义动画
   transition.ready.then(() => {
     document.documentElement.animate(
       {
@@ -73,24 +76,20 @@ const toggleTheme = (event?: MouseEvent) => {
     )
   })
 
-  // 5. 解除戒严
   transition.finished.then(() => {
     document.documentElement.classList.remove('animating')
   })
 }
 
-// 依赖注入
 provide('toggleTheme', toggleTheme)
 provide('isDark', isDark)
 
-// 路由过渡动画管理
 const currentTransition = ref(DEFAULT_ANIMATION)
 const updateTransition = () => {
   const saved = localStorage.getItem('ui-transition')
   currentTransition.value = saved || DEFAULT_ANIMATION
 }
 
-// 窗口限制提示逻辑
 const limitOpacity = ref(0)
 const LIMIT_W = 800
 const LIMIT_H = 640
@@ -109,7 +108,13 @@ const handleResize = () => {
 }
 
 onMounted(() => {
-  // 初始化主题
+  // 初始化语言设置
+  const savedLang = localStorage.getItem('app_language')
+  if (savedLang) {
+    locale.value = savedLang
+  }
+
+  // 初始化主题设置
   const savedTheme = localStorage.getItem('app-theme')
   if (savedTheme === 'light') {
     isDark.value = false
@@ -140,10 +145,6 @@ onUnmounted(() => {
     <n-message-provider>
       <n-dialog-provider>
         
-        <div class="debug-lang-switch" @click="toggleLanguage">
-          {{ locale === 'zh-CN' ? 'Switch to EN' : '切换中文' }}
-        </div>
-
         <div 
           class="minimal-glow" 
           :style="{ opacity: limitOpacity }"
@@ -171,28 +172,6 @@ onUnmounted(() => {
 </template>
 
 <style>
-/* 临时按钮样式 */
-.debug-lang-switch {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 10000;
-  padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  border-radius: 20px;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  font-size: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.2s;
-  user-select: none;
-}
-.debug-lang-switch:hover {
-  background: rgba(0, 0, 0, 0.8);
-  transform: scale(1.05);
-}
-
 /* 全局基础设置 */
 body { 
   margin: 0; 

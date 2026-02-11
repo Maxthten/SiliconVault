@@ -94,6 +94,13 @@
       "valuePlaceholder": "如 S8050",
       "packageLabel": "封装"
     },
+    "Connector": {
+      "nameLabel": "规格/型号",
+      "namePlaceholder": "必填",
+      "valueLabel": "备注",
+      "valuePlaceholder": "选填",
+      "packageLabel": "封装"
+    },
     "General": {
       "nameLabel": "型号/名称",
       "namePlaceholder": "必填",
@@ -546,7 +553,7 @@
       "advanced": "高级维护",
       "about": "关于"
     },
-    "language": "显示语言",
+    "language": "显示语言/Display Language",
     "languageDesc": "切换软件的界面语言",
     "appearance": {
       "animation": "页面转场动画",

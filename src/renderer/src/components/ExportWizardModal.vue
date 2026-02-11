@@ -254,7 +254,8 @@ const handleExportBundle = async () => {
   try {
     const rawIds = JSON.parse(JSON.stringify(selectedIds.value))
 
-    const res = await window.api.exportBundle({
+    // 类型断言规避多余属性检查
+    const res = await (window.api.exportBundle as any)({
       title: t('exportWizard.buttons.exportBundle'), 
       type: 'custom',
       inventoryIds: activeTab.value === 'inventory' ? rawIds : undefined,

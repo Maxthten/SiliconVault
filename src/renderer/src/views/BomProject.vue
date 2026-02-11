@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, watch, h, computed } from 'vue'
+import { ref, watch, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { 
   Add, RocketOutline, CreateOutline, TrashOutline, TimeOutline, Search, 

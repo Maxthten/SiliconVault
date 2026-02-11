@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch} from 'vue'
 import { 
   NModal, NCard, NInput, NInputNumber, NButton, NIcon, NEmpty, NTag, NSelect, useMessage, NSpin
 } from 'naive-ui'
