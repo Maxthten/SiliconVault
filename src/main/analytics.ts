@@ -17,7 +17,6 @@
  */
 import { dbManager } from './db'
 
-// 统计数据的返回接口定义
 export interface ConsumptionData {
   summary: {
     totalQuantity: number
@@ -39,11 +38,6 @@ export interface ConsumptionData {
 
 class AnalyticsManager {
   
-  /**
-   * 获取消耗统计数据的统一入口
-   * @param range 时间范围 'day' | 'week' | 'month'
-   * @param useMock 是否使用模拟数据 (用于前端展示效果调试)
-   */
   public getConsumptionStats(range: 'day' | 'week' | 'month' = 'week', useMock: boolean = false): ConsumptionData {
     if (useMock) {
       return this.generateMockData(range)
@@ -51,12 +45,9 @@ class AnalyticsManager {
     return this.calculateRealStats(range)
   }
 
-  // --- 核心逻辑：从真实数据库计算 ---
-
   private calculateRealStats(range: string): ConsumptionData {
     const db = dbManager.getDb()
     
-    // 1. 确定时间窗口
     const now = new Date()
     let startDate = new Date()
     if (range === 'day') startDate.setDate(now.getDate() - 1)
@@ -65,7 +56,6 @@ class AnalyticsManager {
 
     const startTimeStr = startDate.toISOString().replace('T', ' ').split('.')[0]
 
-    // 2. 拉取所有库存变动日志
     const logs = db.prepare(`
       SELECT * FROM operation_logs 
       WHERE op_type = 'STOCK' 
@@ -73,53 +63,45 @@ class AnalyticsManager {
       ORDER BY created_at ASC
     `).all(startTimeStr) as any[]
 
-    // 3. 数据清洗与聚合
     const timelineMap = new Map<string, number>()
     const categoryMap = new Map<string, number>()
     const itemTotalMap = new Map<number, number>()
     const itemMeta = new Map<number, { name: string; category: string; value: string; package: string }>() 
     
-    // 暂存手动操作的净值：Key = "Date_ID"
     const manualNetMap = new Map<string, number>() 
 
-    // 4. 第一遍遍历：预处理手动净值，并缓存元器件信息
     logs.forEach(log => {
-      // 解析快照数据
       if (!log.old_data || !log.new_data) return
       const oldData = JSON.parse(log.old_data)
       const newData = JSON.parse(log.new_data)
       const id = log.target_id
 
-      // 缓存元器件基础信息
       if (!itemMeta.has(id)) {
         itemMeta.set(id, { 
           name: oldData.name, 
           category: oldData.category || '未分类',
-          // 顺便缓存参数和封装，供前端排行榜动态显示用
           value: oldData.value || '', 
           package: oldData.package || ''
         })
       }
 
       const isBomDeduction = log.desc && log.desc.includes('生产扣减')
-      const date = log.created_at.split(' ')[0] // YYYY-MM-DD
+      const date = log.created_at.split(' ')[0] 
       const change = newData.quantity - oldData.quantity
 
       if (!isBomDeduction) {
-        // 场景 B: 手动库存变更 -> 存入净值表，稍后结算
         const key = `${date}_${id}`
         manualNetMap.set(key, (manualNetMap.get(key) || 0) + change)
       }
     })
 
-    // 5. 第二遍遍历：正式统计 (BOM 消耗 + 手动净消耗)
     let totalConsumed = 0
 
     logs.forEach(log => {
       if (!log.old_data || !log.new_data) return
       
       const isBomDeduction = log.desc && log.desc.includes('生产扣减')
-      if (!isBomDeduction) return // 手动操作跳过，后面单独处理
+      if (!isBomDeduction) return 
 
       const oldData = JSON.parse(log.old_data)
       const newData = JSON.parse(log.new_data)
@@ -127,15 +109,12 @@ class AnalyticsManager {
       const date = log.created_at.split(' ')[0]
       const id = log.target_id
 
-      // BOM 扣减绝对是消耗 (change 为负，取绝对值)
       const qty = Math.abs(change)
       this.aggregate(qty, date, oldData.category || '未分类', id, timelineMap, categoryMap, itemTotalMap)
       totalConsumed += qty
     })
 
-    // 6. 补入手动净值消耗
     manualNetMap.forEach((netChange, key) => {
-      // 只有当一天内累计变动为负数时，才视为消耗
       if (netChange < 0) {
         const [date, idStr] = key.split('_')
         const id = Number(idStr)
@@ -148,14 +127,13 @@ class AnalyticsManager {
       }
     })
 
-    // 7. 组装返回对象
     const timeline = Array.from(timelineMap.entries())
       .map(([date, value]) => ({ date, value }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
     const categories = Array.from(categoryMap.entries())
       .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value) // 降序
+      .sort((a, b) => b.value - a.value) 
 
     const ranking = Array.from(itemTotalMap.entries())
       .map(([id, value]) => {
@@ -164,18 +142,17 @@ class AnalyticsManager {
           name: meta?.name || `未知元件 #${id}`, 
           category: meta?.category || '其他', 
           value,
-          // 将缓存的原始参数吐给前端
           originalValue: meta?.value || '',
           package: meta?.package || ''
         }
       })
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10) // Top 10
+      .slice(0, 10) 
 
-    // 热力图数据
     const heatmap = timeline.map(t => ({ date: t.date, count: t.value }))
 
-    const activeProject = "日常研发" 
+    // 使用特殊标识符替代硬编码中文，交由前端翻译
+    const activeProject = "__DAILY__" 
 
     return {
       summary: {
@@ -191,7 +168,6 @@ class AnalyticsManager {
     }
   }
 
-  // 辅助聚合函数
   private aggregate(qty: number, date: string, cat: string, id: number, 
     tLine: Map<string, number>, catMap: Map<string, number>, itemMap: Map<number, number>) {
     
@@ -199,8 +175,6 @@ class AnalyticsManager {
     catMap.set(cat, (catMap.get(cat) || 0) + qty)
     itemMap.set(id, (itemMap.get(id) || 0) + qty)
   }
-
-  // --- Mock 数据生成器 ---
   
   private generateMockData(range: string): ConsumptionData {
     const days = range === 'month' ? 30 : 7

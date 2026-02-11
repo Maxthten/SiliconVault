@@ -27,7 +27,7 @@ import {
 } from '@vicons/ionicons5'
 import CategoryRuleModal from './CategoryRuleModal.vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { useI18n } from '../utils/i18n' // 引入国际化
+import { useI18n } from '../utils/i18n' 
 
 const props = defineProps<{
   show: boolean
@@ -38,10 +38,25 @@ const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
 const { t } = useI18n()
 
-// 表单数据定义
+// 定义老数据(中文)到新标准(英文Key)的映射表
+// 用于兼容存量数据，防止出现“电阻”和“Resistor”并存的情况
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
+
 const form = ref({
   id: undefined as number | undefined,
-  category: '电阻',
+  category: 'Resistor',
   name: '', 
   value: '', 
   package: '', 
@@ -53,29 +68,59 @@ const form = ref({
 })
 
 const categoryOptions = ref<{ label: string, value: string }[]>([])
-// 标题国际化
 const title = computed(() => props.editData ? t('editDialog.titleEdit') : t('editDialog.titleAdd'))
 const isUploading = ref(false)
 const isDragOver = ref(false)
 
-// 字段规则配置
 const currentRule = ref({
-  nameLabel: '型号/名称', namePlaceholder: '必填',
-  valueLabel: '参数/数值', valuePlaceholder: '选填',
-  packageLabel: '封装'
+  nameLabel: 'Name/Model', namePlaceholder: 'Required',
+  valueLabel: 'Value/Param', valuePlaceholder: 'Optional',
+  packageLabel: 'Package'
 })
 const showRuleModal = ref(false)
 const autoFormat = ref(true)
-const FORMAT_CATS = ['电阻', '电容', '电感'] // 业务逻辑常量，不翻译
+
+const FORMAT_CATS = ['电阻', 'Resistor', '电容', 'Capacitor', '电感', 'Inductor']
+
+// --- 动态获取显示的 Label 和 Placeholder ---
+
+const getLabel = (field: 'nameLabel' | 'valueLabel' | 'packageLabel') => {
+  const cat = form.value.category
+  // 核心：将可能的中文旧分类映射为英文 Key，以便去查语言包
+  const ruleKey = LEGACY_MAP[cat] || cat
+  
+  const key = `fieldRules.${ruleKey}.${field}`
+  const text = t(key)
+  if (text !== key) return text
+
+  const genKey = `fieldRules.General.${field}`
+  const genText = t(genKey)
+  if (genText !== genKey) return genText
+
+  return currentRule.value[field]
+}
+
+const getPlaceholder = (field: 'namePlaceholder' | 'valuePlaceholder') => {
+  const cat = form.value.category
+  const ruleKey = LEGACY_MAP[cat] || cat
+
+  const key = `fieldRules.${ruleKey}.${field}`
+  const text = t(key)
+  if (text !== key) return text
+  
+  const genKey = `fieldRules.General.${field}`
+  const genText = t(genKey)
+  if (genText !== genKey) return genText
+
+  return currentRule.value[field]
+}
 
 // --- 文件上传处理 ---
 
-// 触发隐藏的文件选择框
 const triggerFileInput = () => {
   document.getElementById('hidden-file-input')?.click()
 }
 
-// 处理点击选择文件
 const handleFileSelect = async (event: Event) => {
   const input = event.target as HTMLInputElement
   if (input.files && input.files.length > 0) {
@@ -84,7 +129,6 @@ const handleFileSelect = async (event: Event) => {
   input.value = '' 
 }
 
-// 处理拖拽事件
 const handleDragOver = () => { isDragOver.value = true }
 const handleDragLeave = () => { isDragOver.value = false }
 const handleDrop = async (e: DragEvent) => {
@@ -94,7 +138,6 @@ const handleDrop = async (e: DragEvent) => {
   }
 }
 
-// 处理粘贴事件 (Ctrl+V)
 const handlePaste = async (e: ClipboardEvent) => {
   const items = e.clipboardData?.items
   if (!items) return
@@ -109,14 +152,12 @@ const handlePaste = async (e: ClipboardEvent) => {
   if (files.length > 0) await processFiles(files)
 }
 
-// 转换文件列表为数组并处理
 const processFileList = async (fileList: FileList) => {
   const files: File[] = []
   for (let i = 0; i < fileList.length; i++) files.push(fileList[i])
   await processFiles(files)
 }
 
-// 核心文件上传逻辑
 const processFiles = async (files: File[]) => {
   if (isUploading.value) return
   isUploading.value = true
@@ -128,14 +169,11 @@ const processFiles = async (files: File[]) => {
   try {
     for (const file of files) {
       let newFilename = ''
-      
       const sourcePath = (file as any).path
 
       if (sourcePath) {
-        // 方案 A: 有路径，直接复制文件
         newFilename = await window.api.saveAsset(sourcePath, group, category)
       } else {
-        // 方案 B: 无路径 (如截图)，传递二进制流
         const arrayBuffer = await file.arrayBuffer()
         newFilename = await window.api.saveBuffer(arrayBuffer, file.name || 'screenshot.png', group, category)
       }
@@ -150,7 +188,6 @@ const processFiles = async (files: File[]) => {
     }
 
     if (successCount > 0) {
-      // 使用参数化翻译
       message.success(t('editDialog.upload.success', { count: successCount }))
     } else {
       message.warning(t('editDialog.upload.noValidFile'))
@@ -164,7 +201,6 @@ const processFiles = async (files: File[]) => {
   }
 }
 
-// 移除文件
 const removeImage = (index: number) => form.value.image_paths.splice(index, 1)
 const removeDoc = (index: number) => form.value.datasheet_paths.splice(index, 1)
 
@@ -178,20 +214,19 @@ const formatElectronicValue = (val: string, cat: string) => {
   if (match) res = `${match[1]}.${match[3]}${match[2]}`
   res = res.replace(/K/g, 'k').replace(/P/g, 'p').replace(/N/g, 'n').replace(/[uU]/g, 'µ')
   
-  // 这些逻辑依赖数据库的中文分类名，暂时保留中文判断
-  if (cat === '电阻' || cat === '保险丝') {
+  if (['电阻', 'Resistor', '保险丝', 'Fuse'].includes(cat)) {
     res = res.replace(/(r|ohm|Ω)$/i, 'R')
     if (/[\dkmM]$/.test(res)) res += 'R'
   }
-  if (cat === '二极管') {
+  if (['二极管', 'Diode'].includes(cat)) {
     res = res.replace(/(v|volt)$/i, 'V')
     if (/[\d]$/.test(res)) res += 'V'
   }
-  if (cat === '电容') {
+  if (['电容', 'Capacitor'].includes(cat)) {
     res = res.replace(/f$/i, 'F')
     if (/[\dpnµm]$/.test(res)) res += 'F'
   }
-  if (cat === '电感') {
+  if (['电感', 'Inductor'].includes(cat)) {
     res = res.replace(/h$/i, 'H')
     if (/[\dnµm]$/.test(res)) res += 'H'
   }
@@ -219,7 +254,32 @@ const loadRule = async () => {
 watch(() => props.show, async (newVal) => {
   if (newVal) {
     const cats = await window.api.fetchCategories()
-    categoryOptions.value = cats.map(c => ({ label: c, value: c }))
+    
+    // 智能去重与映射逻辑
+    const mergedMap = new Map<string, { label: string, value: string }>()
+
+    cats.forEach((rawCat: string) => {
+      // 1. 找到对应的“标准英文Key”
+      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
+
+      // 2. 获取显示名称 (尝试翻译)
+      const transKey = `categories.${canonicalKey}`
+      const translated = t(transKey)
+      const displayLabel = translated !== transKey ? translated : rawCat
+
+      // 3. 智能合并策略
+      if (mergedMap.has(displayLabel)) {
+        // 如果当前是“老数据格式”（即它在 LEGACY_MAP 里作为 Key 存在，比如“电阻”）
+        // 优先保留老数据格式作为 value，防止数据库分裂
+        if (LEGACY_MAP[rawCat]) {
+          mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+        }
+      } else {
+        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+      }
+    })
+
+    categoryOptions.value = Array.from(mergedMap.values())
     
     if (props.editData) {
       let imgs = props.editData.image_paths
@@ -236,9 +296,17 @@ watch(() => props.show, async (newVal) => {
         datasheet_paths: Array.isArray(docs) ? docs : []
       }
     } else {
-      // 默认分类保留中文，因为对应数据库
+      // 计算默认分类
+      let defaultCat = 'Resistor'
+      // 尝试在生成的选项中找到 Resistor 对应的真实 Value (可能是 '电阻')
+      const resistorLabel = t('categories.Resistor')
+      const targetOpt = categoryOptions.value.find(o => o.label === resistorLabel)
+      if (targetOpt) defaultCat = targetOpt.value
+
       form.value = {
-        id: undefined, category: form.value.category || '电阻', name: '', value: '', package: '', quantity: 0, location: '', min_stock: 10,
+        id: undefined, 
+        category: defaultCat, 
+        name: '', value: '', package: '', quantity: 0, location: '', min_stock: 10,
         image_paths: [], datasheet_paths: []
       }
     }
@@ -263,7 +331,7 @@ const handleSave = async () => {
   }
 
   await window.api.upsertItem(payload)
-  message.success(props.editData ? t('messages.success.saved') : t('messages.success.saved'))
+  message.success(t('messages.success.saved'))
   emit('update:show', false)
   emit('refresh')
 }
@@ -354,7 +422,7 @@ const handleSave = async () => {
           <n-form-item-row class="custom-label-row">
             <template #label>
               <div class="label-container">
-                <span class="label-text">{{ currentRule.valueLabel }}</span>
+                <span class="label-text">{{ getLabel('valueLabel') }}</span>
                 <div 
                   v-if="FORMAT_CATS.includes(form.category)" 
                   class="smart-tag" 
@@ -368,18 +436,18 @@ const handleSave = async () => {
             </template>
             <n-input 
               v-model:value="form.value" 
-              :placeholder="currentRule.valuePlaceholder" 
+              :placeholder="getPlaceholder('valuePlaceholder')" 
               @blur="handleValueBlur"
             />
           </n-form-item-row>
 
-          <n-form-item-row :label="currentRule.nameLabel">
-            <n-input v-model:value="form.name" :placeholder="currentRule.namePlaceholder" />
+          <n-form-item-row :label="getLabel('nameLabel')">
+            <n-input v-model:value="form.name" :placeholder="getPlaceholder('namePlaceholder')" />
           </n-form-item-row>
         </div>
 
         <div class="row-2">
-          <n-form-item-row :label="currentRule.packageLabel">
+          <n-form-item-row :label="getLabel('packageLabel')">
             <n-input v-model:value="form.package" :placeholder="t('editDialog.optional')" />
           </n-form-item-row>
           <n-form-item-row :label="t('editDialog.location')">

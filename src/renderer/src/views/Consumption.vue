@@ -32,16 +32,31 @@ import {
   TrendingUpOutline 
 } from '@vicons/ionicons5'
 import * as echarts from 'echarts'
-import { useI18n } from '../utils/i18n' // 引入国际化
+import { useI18n } from '../utils/i18n'
 
-const SHOW_DEBUG_BUTTON = true 
+// 修改：隐藏调试按钮（你可以随时改回 true 来开启）
+const SHOW_DEBUG_BUTTON = false
 const { t, locale } = useI18n()
+
+// 映射表：用于合并新旧数据
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
 
 const loading = ref(false)
 const timeRange = ref<'day' | 'week' | 'month'>('week')
 const isMock = ref(false)
 
-// --- 主题检测逻辑 ---
 const isDark = ref(document.documentElement.getAttribute('data-theme') !== 'light')
 let themeObserver: MutationObserver | null = null
 
@@ -66,7 +81,6 @@ const categoryRules = ref<Record<string, any>>({})
 const islandAnimating = ref(false)
 const activeDrillDown = ref<string | null>(null)
 
-// 状态岛配置
 const islandStatus = computed(() => {
   if (activeDrillDown.value) {
     return {
@@ -76,13 +90,16 @@ const islandStatus = computed(() => {
     }
   }
 
-  // 时间前缀映射
   const timeLabels: Record<string, string> = {
     day: t('consumption.time.today'),
     week: t('consumption.time.thisWeek'),
     month: t('consumption.time.thisMonth')
   }
   const timePrefix = timeLabels[timeRange.value] || t('consumption.time.current')
+
+  // 修改：处理项目名称的动态翻译
+  const rawProject = data.value.summary.activeProject
+  const projectDisplay = rawProject === '__DAILY__' ? t('consumption.dailyProject') : rawProject
 
   const intensity = data.value.summary.intensity
   if (intensity === 'high') {
@@ -93,7 +110,7 @@ const islandStatus = computed(() => {
     }
   } else if (intensity === 'medium') {
     return {
-      text: t('consumption.island.medium', { time: timePrefix, project: data.value.summary.activeProject }),
+      text: t('consumption.island.medium', { time: timePrefix, project: projectDisplay }),
       icon: ConstructOutline,
       colorClass: 'island-purple'
     }
@@ -106,7 +123,6 @@ const islandStatus = computed(() => {
   }
 })
 
-// 下拉菜单选项
 const rangeOptions = computed(() => [
   { label: t('consumption.ranges.day'), value: 'day'}, 
   { label: t('consumption.ranges.week'), value: 'week'}, 
@@ -131,7 +147,11 @@ const loadRules = async () => {
 }
 
 const getDisplayName = (item: any) => {
-  const rule = categoryRules.value[item.category]
+  // 映射逻辑
+  const rawCat = item.category
+  const ruleKey = LEGACY_MAP[rawCat] || rawCat
+  
+  const rule = categoryRules.value[ruleKey]
   let targetKey = 'name'
 
   if (rule?.layout) {
@@ -151,6 +171,7 @@ const getDisplayName = (item: any) => {
   return displayVal || item.name || t('common.unnamed')
 }
 
+// 核心逻辑：加载数据并进行“清洗”
 const loadData = async () => {
   loading.value = true
   islandAnimating.value = true
@@ -160,6 +181,35 @@ const loadData = async () => {
 
   try {
     const res = await window.api.getConsumptionStats(timeRange.value, isMock.value)
+    
+    // --- 1. 清洗 categories (玫瑰图) ---
+    // 将 "Resistor" 和 "电阻" 合并
+    const catMap = new Map<string, number>()
+    res.categories.forEach((c: any) => {
+      const canonicalKey = LEGACY_MAP[c.name] || c.name
+      const transKey = `categories.${canonicalKey}`
+      const translated = t(transKey)
+      const displayLabel = translated !== transKey ? translated : c.name
+      
+      catMap.set(displayLabel, (catMap.get(displayLabel) || 0) + c.value)
+    })
+    
+    // 重建数组并排序
+    res.categories = Array.from(catMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+
+    // --- 2. 清洗 ranking (排行榜) ---
+    // 统一分类名称的显示
+    res.ranking = res.ranking.map((item: any) => {
+      const canonicalKey = LEGACY_MAP[item.category] || item.category
+      const transKey = `categories.${canonicalKey}`
+      const translated = t(transKey)
+      const displayCat = translated !== transKey ? translated : item.category
+      
+      return { ...item, category: displayCat }
+    })
+
     data.value = res
     activeDrillDown.value = null
     
@@ -248,7 +298,7 @@ const renderCharts = () => {
       textStyle: { color: theme.textColor }
     }],
     series: [{
-      name: t('consumption.charts.consumption'), // 国际化图例
+      name: t('consumption.charts.consumption'), 
       type: 'line',
       smooth: 0.4,
       symbol: 'none',
@@ -298,7 +348,6 @@ const renderCharts = () => {
   const heatmapData = data.value.heatmap.map((item: any) => [item.date, item.count])
   const maxVal = Math.max(...data.value.heatmap.map((i: any) => i.count), 10)
 
-  // 动态判断日历语言
   const calendarLang = locale.value === 'zh-CN' ? 'cn' : 'en'
 
   chartHeatmap.setOption({
@@ -330,7 +379,6 @@ const renderCharts = () => {
         color: theme.heatmapEmpty               
       },
       yearLabel: { show: false },
-      // 应用动态语言
       dayLabel: { color: theme.textColor, nameMap: calendarLang },
       monthLabel: { color: theme.textColor, nameMap: calendarLang },
       splitLine: { show: false }
@@ -360,9 +408,8 @@ const handleResize = () => {
 
 watch(timeRange, () => loadData())
 
-// 监听语言切换，重绘图表（更新标题和日历语言）
 watch(locale, () => {
-  renderCharts()
+  loadData() // 重新加载以更新清洗后的分类名
 })
 
 onMounted(() => {
@@ -508,7 +555,7 @@ const getRankIcon = (index: number) => {
 </template>
 
 <style scoped>
-/* 样式保持完全不变 */
+/* 样式保持不变 */
 .consumption-page {
   background-color: transparent; 
   color: var(--text-primary);

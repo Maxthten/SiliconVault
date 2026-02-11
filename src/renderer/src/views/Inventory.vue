@@ -19,21 +19,34 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { 
   Search, Add, CreateOutline, CheckmarkOutline, 
-  ChevronDown, ChevronForward, SettingsOutline, FlashOutline
+  ChevronDown, ChevronForward, FlashOutline, SettingsOutline
 } from '@vicons/ionicons5'
 import { NInput, NButton, NIcon, NSpin, NSelect, useDialog } from 'naive-ui'
 import { VueDraggable } from 'vue-draggable-plus'
 import InventoryCard from '../components/InventoryCard.vue'
 import EditDialog from '../components/EditDialog.vue'
 import BatchEditModal from '../components/BatchEditModal.vue'
-// 引入国际化工具
 import { useI18n } from '../utils/i18n'
 import { useI18nMessage } from '../utils/message'
 
 const { t } = useI18n()
-// 使用封装后的消息工具
-const { success, error, warning: warningMsg } = useI18nMessage()
+const { success, error } = useI18nMessage()
 const dialog = useDialog()
+
+// 映射表：用于在视觉上合并新旧数据
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
 
 const searchQuery = ref('')
 const filterCategory = ref<string | null>(null)
@@ -71,22 +84,45 @@ const loadRules = async () => {
     const map: Record<string, any> = {}
     results.forEach(r => map[r.cat] = r.rule)
     categoryRules.value = map
-  } catch (e) { console.error('规则加载异常', e) }
+  } catch (e) { console.error(e) }
 }
 
 const loadPackages = async () => {
   try {
     const pkgs = await window.api.fetchPackages(filterCategory.value || undefined)
-    // 这里的“全部封装”改为动态翻译
     packageOptions.value = [{ label: t('inventory.allPackages'), value: null }, ...pkgs.map(p => ({ label: p, value: p }))]
   } catch (e) { console.error(e) }
 }
 
+// 改造后的分类加载：实现中英文视觉合并
 const loadOptions = async () => {
   try {
     const cats = await window.api.fetchCategories()
-    // 这里的“全部分类”改为动态翻译
-    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...cats.map(c => ({ label: c, value: c }))]
+    
+    const mergedMap = new Map<string, { label: string, value: string }>()
+
+    cats.forEach((rawCat: string) => {
+      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
+      const transKey = `categories.${canonicalKey}`
+      const translated = t(transKey)
+      const displayLabel = translated !== transKey ? translated : rawCat
+
+      if (mergedMap.has(displayLabel)) {
+        // 如果当前是旧数据格式，优先保留旧数据值，防止筛选失效
+        if (LEGACY_MAP[rawCat]) {
+          mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+        }
+      } else {
+        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+      }
+    })
+
+    const mergedOptions = Array.from(mergedMap.values())
+    // 保持一定的排序 (可选)
+    mergedOptions.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+
+    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...mergedOptions]
+    
     await loadPackages()
   } catch (e) { console.error(e) }
 }
@@ -104,14 +140,29 @@ const loadData = async () => {
     
     const oldStateMap = new Map(sortedGroups.value.map(g => [g.name, g.collapsed]))
     
-    sortedGroups.value = Object.entries(data).map(([catName, items]) => ({
+    // 改造：分组展示时的视觉合并逻辑
+    // 即使数据库里是分开的 "Resistor" 和 "电阻"，在界面上也合并到同一个 Header 下
+    const mergedGroups = new Map<string, any[]>()
+
+    Object.entries(data).forEach(([rawCat, items]) => {
+      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
+      const transKey = `categories.${canonicalKey}`
+      const translated = t(transKey)
+      const displayLabel = translated !== transKey ? translated : rawCat
+
+      if (!mergedGroups.has(displayLabel)) {
+        mergedGroups.set(displayLabel, [])
+      }
+      mergedGroups.get(displayLabel)!.push(...items)
+    })
+
+    sortedGroups.value = Array.from(mergedGroups.entries()).map(([catName, items]) => ({
       name: catName,
       collapsed: oldStateMap.get(catName) || false,
       items: items
     }))
 
   } catch (err) {
-    // 使用错误码key，如果后端返回具体信息可以保留显示
     error('loadFailed')
     console.error(err)
   } finally {
@@ -119,9 +170,9 @@ const loadData = async () => {
   }
 }
 
-// 监听语言变化，重新加载选项文本
 watch(() => t('common.save'), () => {
   loadOptions()
+  loadData() // 语言切换时刷新列表标题
 })
 
 watch(filterCategory, () => { loadPackages(); filterPackage.value = null; loadData() })
@@ -154,20 +205,20 @@ const handleQtyUpdate = async (item: any, delta: number) => {
 
 const handleDelete = (id: number) => {
   dialog.warning({
-    title: t('common.delete'), // 标题使用通用翻译
-    content: t('inventory.deleteConfirm'), // 内容使用特定翻译
+    title: t('common.delete'), 
+    content: t('inventory.deleteConfirm'), 
     positiveText: t('common.delete'),
     negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       try {
         await window.api.deleteItem(id)
-        success('deleted') // 使用key
+        success('deleted') 
         loadData()
         loadOptions()
       } catch (e: any) {
         if (e.message && e.message.includes('无法删除')) {
           dialog.error({
-            title: t('messages.warning.title'), // 也可以定义通用警告标题
+            title: t('messages.warning.title'), 
             content: e.message, 
             positiveText: t('common.confirm')
           })
@@ -301,7 +352,7 @@ onMounted(() => { loadOptions(); loadData() })
 </template>
 
 <style scoped>
-/* 样式保持不变，此处省略以节省篇幅，请保留原文件的 Style 部分 */
+/* 样式保持不变 */
 .inventory-page { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
 .toolbar {

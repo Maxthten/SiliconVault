@@ -18,7 +18,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { NModal, NCard, NInputNumber, NButton, NCollapse, NCollapseItem, NTable, useMessage, useDialog } from 'naive-ui'
-import { useI18n } from '../utils/i18n' // 引入国际化
+import { useI18n } from '../utils/i18n' 
 
 const props = defineProps<{
   show: boolean
@@ -30,11 +30,25 @@ const message = useMessage()
 const dialog = useDialog()
 const { t } = useI18n()
 
+// 映射表：用于兼容旧数据键值
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
+
 const multiplier = ref(1)
 const deductionList = ref<any[]>([])
 const categoryRules = ref<Record<string, any>>({})
 
-// 计算库存允许的最大生产套数
 const maxBuildable = computed(() => {
   if (!deductionList.value.length) return 0
   
@@ -47,7 +61,6 @@ const maxBuildable = computed(() => {
   return minSets === Infinity ? 0 : Math.max(0, minSets)
 })
 
-// 识别当前的短板元件
 const shortageItem = computed(() => {
   if (!deductionList.value.length) return null
   
@@ -81,7 +94,11 @@ const loadRules = async () => {
 }
 
 const getItemDisplay = (item: any) => {
-  const rule = categoryRules.value[item.category]
+  // 核心：通过映射获取标准 Key，再查找规则
+  const rawCat = item.category
+  const ruleKey = LEGACY_MAP[rawCat] || rawCat
+  
+  const rule = categoryRules.value[ruleKey]
   const rawLayout = rule?.layout
 
   let layout = { tl: 'value', tr: 'package', bl: 'name' }
@@ -288,7 +305,7 @@ const doExecute = async () => {
 </template>
 
 <style scoped>
-/* 样式保持不变，此处省略 */
+/* 样式保持不变 */
 .run-modal { 
   width: 650px; 
   background-color: var(--bg-modal); 

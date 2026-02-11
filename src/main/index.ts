@@ -37,8 +37,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     title: 'SiliconVault',
     icon: icon,
-    titleBarStyle: 'hidden', // 兼容 macOS 样式
-    // -------------------------
+    titleBarStyle: 'hidden', 
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -135,7 +134,6 @@ app.whenReady().then(() => {
       case 'close': win.close(); break;
     }
   })
-  // -----------------------
 
   // IPC 注册
   ipcMain.handle('get-categories', () => dbManager.fetchCategories())
@@ -209,11 +207,12 @@ app.whenReady().then(() => {
     markDataDirty()
   })
 
-  ipcMain.handle('export-data', async (_, { title, content, filename }) => {
+  // 修改：支持接收 title 和 filterName
+  ipcMain.handle('export-data', async (_, { title, content, filename, filterName }) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: title || '导出数据',
+      title: title || 'Export Data',
       defaultPath: filename || 'export.csv',
-      filters: [{ name: 'CSV 文件', extensions: ['csv'] }]
+      filters: [{ name: filterName || 'CSV File', extensions: ['csv'] }]
     })
     if (canceled || !filePath) return false
     try {
@@ -225,10 +224,12 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('read-file-text', async () => {
+  // 修改：支持接收 title 和 filterName
+  ipcMain.handle('read-file-text', async (_, { title, filterName } = {}) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: title,
       properties: ['openFile'],
-      filters: [{ name: 'CSV 文件', extensions: ['csv'] }]
+      filters: [{ name: filterName || 'CSV File', extensions: ['csv'] }]
     })
     if (canceled || filePaths.length === 0) return null
     try {
@@ -309,8 +310,13 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('select-folder', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+  // 修改：支持接收 title 和 buttonLabel
+  ipcMain.handle('select-folder', async (_, { title, buttonLabel } = {}) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({ 
+      title: title,
+      buttonLabel: buttonLabel,
+      properties: ['openDirectory'] 
+    })
     if (canceled || filePaths.length === 0) return null
     return filePaths[0]
   })
@@ -336,16 +342,19 @@ app.whenReady().then(() => {
     return await backupManager.generateTemplate(filePath)
   })
 
+  // 修改：支持接收 title 和 filterName
   ipcMain.handle('export-bundle', async (_, options) => {
+    const { title, filterName, ...restOptions } = options || {}
+    
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '导出全量备份/资源包',
+      title: title || 'Export Bundle',
       defaultPath: `Backup_${new Date().toISOString().split('T')[0]}.svdata`,
-      filters: [{ name: 'SiliconVault 数据包', extensions: ['svdata'] }]
+      filters: [{ name: filterName || 'SiliconVault Data', extensions: ['svdata'] }]
     })
     
     if (canceled || !filePath) return null
     try {
-      return await backupManager.exportBundle(filePath, options)
+      return await backupManager.exportBundle(filePath, restOptions)
     } catch (e) {
       console.error(e)
       throw e

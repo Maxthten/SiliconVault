@@ -115,7 +115,12 @@ const handleDownloadCsvTemplate = async (e: Event) => {
 const handleDownloadSvDataTemplate = async (e: Event) => {
   e.stopPropagation()
   try {
-    const folderPath = await window.api.selectFolder()
+    // 传入 title 和 buttonLabel 以实现弹窗国际化
+    const folderPath = await window.api.selectFolder({
+      title: t('dataCenter.import.saveCsvTitle').replace('CSV', 'SVData'), // 复用现有 Key 做简单替换，或者建议在 JSON 中添加专用 Key
+      buttonLabel: t('common.save')
+    })
+    
     if (!folderPath) return
 
     const separator = folderPath.includes('\\') ? '\\' : '/'
@@ -287,7 +292,6 @@ const handleBundleImport = async (path: string) => {
 </template>
 
 <style scoped>
-/* 样式保持不变，此处省略 */
 .data-center-page {
   padding: 40px; height: 100vh; display: flex; flex-direction: column;
   background: transparent; 
@@ -302,11 +306,9 @@ const handleBundleImport = async (path: string) => {
 }
 
 .action-card {
- 
   background: var(--bg-card);
   border: 1px solid var(--border-main);
   box-shadow: var(--shadow-card);
-  
   border-radius: 24px;
   position: relative; overflow: hidden;
   display: flex; flex-direction: column;
@@ -359,7 +361,6 @@ const handleBundleImport = async (path: string) => {
 .loading-overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px;
-
   background: var(--bg-modal); 
   z-index: 10;
 }

@@ -25,7 +25,7 @@ import {
   DocumentTextOutline, CloseCircle, FolderOpenOutline 
 } from '@vicons/ionicons5'
 import { VueDraggable } from 'vue-draggable-plus'
-import { useI18n } from '../utils/i18n' // 引入国际化
+import { useI18n } from '../utils/i18n' 
 
 const props = defineProps<{
   show: boolean
@@ -36,7 +36,21 @@ const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
 const { t } = useI18n()
 
-// 表单信息
+// 映射表：用于兼容旧数据键值
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
+
 const form = ref({
   id: undefined as number | undefined,
   name: '',
@@ -46,37 +60,54 @@ const form = ref({
 const bomList = ref<any[]>([])
 const fileList = ref<string[]>([]) 
 
-// 状态控制
 const isUploading = ref(false)
 const isDragOver = ref(false)
 const showUploadArea = ref(false)
 
-// 左侧筛选状态
 const sourceSearch = ref('')
 const filterCategory = ref<string | null>(null)
 const filterPackage = ref<string | null>(null)
 const sourceList = ref<any[]>([])
 
-// 选项列表
 const categoryOptions = ref<any[]>([])
 const packageOptions = ref<any[]>([])
-// 存储分类规则
 const categoryRules = ref<Record<string, any>>({})
 
 // --- 初始化与加载 ---
 
+// 改造分类加载：实现中英文视觉合并
 const loadCategories = async () => {
   try {
     const cats = await window.api.fetchCategories()
-    // 动态翻译 "全部分类"
-    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...cats.map(c => ({ label: c, value: c }))]
+    
+    const mergedMap = new Map<string, { label: string, value: string }>()
+
+    cats.forEach((rawCat: string) => {
+      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
+      const transKey = `categories.${canonicalKey}`
+      const translated = t(transKey)
+      const displayLabel = translated !== transKey ? translated : rawCat
+
+      if (mergedMap.has(displayLabel)) {
+        // 优先保留旧数据值
+        if (LEGACY_MAP[rawCat]) {
+          mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+        }
+      } else {
+        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+      }
+    })
+
+    const mergedOptions = Array.from(mergedMap.values())
+    mergedOptions.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+
+    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...mergedOptions]
   } catch (e) { console.error(e) }
 }
 
 const loadPackages = async () => {
   try {
     const pkgs = await window.api.fetchPackages(filterCategory.value || undefined)
-    // 动态翻译 "全部封装"
     packageOptions.value = [{ label: t('inventory.allPackages'), value: null }, ...pkgs.map(p => ({ label: p, value: p }))]
   } catch (e) { console.error(e) }
 }
@@ -130,7 +161,11 @@ watch(() => props.show, async (val) => {
 // --- 动态显示逻辑 ---
 
 const getItemDisplay = (item: any) => {
-  const rule = categoryRules.value[item.category]
+  // 核心：通过映射获取标准 Key，再查找规则
+  const rawCat = item.category
+  const ruleKey = LEGACY_MAP[rawCat] || rawCat
+  
+  const rule = categoryRules.value[ruleKey]
   const rawLayout = rule?.layout
 
   let layout = { tl: 'value', tr: 'package', bl: 'name' }

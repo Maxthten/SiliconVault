@@ -72,7 +72,8 @@ const api = {
 
   // --- 6. 数据中心 ---
   exportData: (payload) => ipcRenderer.invoke('export-data', payload),
-  readFileText: () => ipcRenderer.invoke('read-file-text'),
+  // 支持传递 options (如 title, filterName)
+  readFileText: (options) => ipcRenderer.invoke('read-file-text', options),
   getAllInventoryExport: () => ipcRenderer.invoke('get-all-inventory-export'),
   getAllProjectsExport: () => ipcRenderer.invoke('get-all-projects-export'), 
   batchImportInventory: (items, mode) => ipcRenderer.invoke('batch-import-inventory', { items, mode }),
@@ -93,7 +94,8 @@ const api = {
     ipcRenderer.invoke('save-asset', { sourcePath, group, category }),
   saveBuffer: (buffer, filename, group, category) => 
     ipcRenderer.invoke('save-buffer', { buffer, filename, group, category }),
-  selectFolder: () => ipcRenderer.invoke('select-folder'),
+  // 支持传递 options (如 title, buttonLabel)
+  selectFolder: (options) => ipcRenderer.invoke('select-folder', options),
   updateStoragePath: (newPath) => ipcRenderer.invoke('update-storage-path', newPath),
   scanUnusedAssets: () => ipcRenderer.invoke('scan-unused-assets'),
   purgeUnusedAssets: (files) => ipcRenderer.invoke('purge-unused-assets', files),

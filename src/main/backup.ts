@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
 import AdmZip from 'adm-zip'
 import fs from 'fs'
 import path from 'path'
@@ -86,12 +87,11 @@ class BackupManager {
       const fileName = `AutoBackup_${timestamp}.svdata`
       const filePath = path.join(targetDir, fileName)
 
-      // 复用现有的全量导出逻辑
       await this.exportBundle(filePath, { type: 'all' })
       
       return true
     } catch (e) {
-      console.error('自动备份执行失败:', e)
+      console.error('Auto backup failed:', e)
       return false
     }
   }
@@ -102,7 +102,6 @@ class BackupManager {
     try {
       const files = fs.readdirSync(targetDir)
       
-      // 筛选出符合 AutoBackup_*.svdata 格式的文件
       const backupFiles = files
         .filter(f => /^AutoBackup_\d{8}_\d{6}\.svdata$/.test(f))
         .map(f => {
@@ -119,7 +118,6 @@ class BackupManager {
         })
         .filter(f => f !== null) as { name: string, path: string, time: number }[]
 
-      // 按时间倒序排列 (最新的在前)
       backupFiles.sort((a, b) => b.time - a.time)
 
       if (backupFiles.length > maxBackups) {
@@ -128,18 +126,17 @@ class BackupManager {
         for (const file of filesToDelete) {
           fs.unlinkSync(file.path)
           
-          // 尝试清理伴生的CSV文件（如果存在）
           const csvPath = file.path.replace(/\.svdata$/, '.csv')
           if (fs.existsSync(csvPath)) {
             fs.unlinkSync(csvPath)
           }
         }
         
-        console.log(`已清理 ${filesToDelete.length} 个过期自动备份文件`)
+        console.log(`Cleaned ${filesToDelete.length} old backups`)
       }
 
     } catch (e) {
-      console.error('清理旧备份失败:', e)
+      console.error('Clean old backups failed:', e)
     }
   }
 
@@ -228,15 +225,21 @@ class BackupManager {
         const csvPath = filePath.replace(/\.(svdata|zip)$/i, '') + '.csv'
         fs.writeFileSync(csvPath, '\uFEFF' + csvContent, 'utf-8')
       } catch (e) {
-        console.error('伴生 CSV 生成失败', e)
+        console.error('CSV generation failed', e)
       }
 
-      // 记录导出操作日志
       dbManager.addLog({
         op_type: 'EXPORT',
-        target_type: 'PROJECT', // 这里泛指项目/数据导出
+        target_type: 'PROJECT', 
         target_id: 0,
-        desc: `导出资源包: ${path.basename(filePath)} (包含 ${inventoryList.length} 元件, ${projectList.length} 项目)`
+        desc: JSON.stringify({
+          key: 'log.backup.export',
+          params: { 
+            file: path.basename(filePath), 
+            inv: inventoryList.length, 
+            proj: projectList.length 
+          }
+        })
       })
 
       return { 
@@ -245,7 +248,7 @@ class BackupManager {
       }
 
     } catch (e) {
-      console.error('导出失败:', e)
+      console.error('Export failed:', e)
       throw e
     }
   }
@@ -288,7 +291,7 @@ class BackupManager {
       this.tempSessions.set(scanId, workingDir)
 
       const metaPath = path.join(workingDir, 'meta.json')
-      if (!fs.existsSync(metaPath)) throw new Error('无效的数据包：缺少 meta.json')
+      if (!fs.existsSync(metaPath)) throw new Error('Invalid bundle: missing meta.json')
       
       const metaData = fs.readFileSync(metaPath, 'utf-8')
       const meta: BackupMeta = JSON.parse(metaData)
@@ -327,7 +330,6 @@ class BackupManager {
       let newInventoryCount = 0
 
       for (const remoteItem of meta.inventory) {
-        // 显式断言为 any，解决 Property 'image_paths' does not exist 错误
         const local = db.prepare(`
           SELECT * FROM inventory 
           WHERE name = ? AND package = ? AND value = ?
@@ -351,7 +353,6 @@ class BackupManager {
       let newProjectCount = 0
 
       for (const remoteProj of meta.projects) {
-        // 显式断言为 any，解决 Property 'files' does not exist 错误
         const local = db.prepare(`
           SELECT * FROM projects WHERE name = ?
         `).get(remoteProj.name) as any
@@ -382,7 +383,7 @@ class BackupManager {
       }
 
     } catch (e) {
-      console.error('扫描资源包失败:', e)
+      console.error('Scan failed:', e)
       this.cleanupTemp(scanId)
       throw e
     }
@@ -390,7 +391,7 @@ class BackupManager {
 
   public async executeImport(scanId: string, strategies: { inventory: ImportStrategies, projects: ImportStrategies }) {
     const workingDir = this.tempSessions.get(scanId)
-    if (!workingDir || !fs.existsSync(workingDir)) throw new Error('导入会话已过期')
+    if (!workingDir || !fs.existsSync(workingDir)) throw new Error('Session expired')
 
     const db = dbManager.getDb()
     const assetsRoot = path.join(dbManager.getStoragePath(), 'assets')
@@ -442,7 +443,7 @@ class BackupManager {
           }
           return JSON.stringify(newPaths)
         } catch (e) { 
-          console.error('[BackupManager] 导入执行阶段严重崩溃:', e)
+          console.error('Import file error:', e)
           return JSON.stringify([]) 
         }
       }
@@ -548,20 +549,26 @@ class BackupManager {
 
       transaction()
 
-      // 记录导入操作日志
       const invCount = meta.inventory.length
       const projCount = meta.projects.length
       dbManager.addLog({
         op_type: 'IMPORT',
-        target_type: 'INVENTORY', // 这里泛指数据导入
+        target_type: 'INVENTORY', 
         target_id: 0,
-        desc: `导入资源包 (Session: ${scanId.substring(0, 8)}) - 包含 ${invCount} 元件, ${projCount} 项目`
+        desc: JSON.stringify({
+          key: 'log.backup.import',
+          params: { 
+            session: scanId.substring(0, 8), 
+            inv: invCount, 
+            proj: projCount 
+          }
+        })
       })
 
       return { success: true }
 
     } catch (e) {
-      console.error('导入执行阶段失败:', e)
+      console.error('Import execution failed:', e)
       throw e
     } finally {
       this.cleanupTemp(scanId)
@@ -626,7 +633,7 @@ class BackupManager {
 
       return { success: true }
     } catch (e) {
-      console.error('模板生成失败:', e)
+      console.error('Template generation failed:', e)
       throw e
     }
   }
@@ -636,7 +643,7 @@ class BackupManager {
     if (dir && fs.existsSync(dir)) {
       try {
         fs.rmSync(dir, { recursive: true, force: true })
-      } catch (e) { console.error('临时文件清理失败', e) }
+      } catch (e) { console.error('Cleanup temp failed', e) }
     }
     this.tempSessions.delete(scanId)
   }

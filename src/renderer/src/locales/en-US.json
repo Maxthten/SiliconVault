@@ -38,6 +38,77 @@
     "relatedProjects": "Related Projects",
     "viewAll": "View All"
   },
+  "categories": {
+    "Resistor": "Resistor",
+    "Capacitor": "Capacitor",
+    "Inductor": "Inductor",
+    "Diode": "Diode",
+    "Transistor": "Transistor",
+    "IC": "IC",
+    "Connector": "Connector",
+    "Module": "Module",
+    "Switch": "Switch",
+    "Other": "Other",
+    "Uncategorized": "Uncategorized"
+  },
+  "fieldRules": {
+    "Resistor": {
+      "nameLabel": "Tolerance/Power",
+      "namePlaceholder": "Optional (e.g. 1%)",
+      "valueLabel": "Resistance",
+      "valuePlaceholder": "Required (e.g. 10k)",
+      "packageLabel": "Package"
+    },
+    "Capacitor": {
+      "nameLabel": "Voltage/Material",
+      "namePlaceholder": "Optional (e.g. 50V)",
+      "valueLabel": "Capacitance",
+      "valuePlaceholder": "Required (e.g. 100nF)",
+      "packageLabel": "Package"
+    },
+    "Inductor": {
+      "nameLabel": "Current/Param",
+      "namePlaceholder": "Optional (e.g. 1A)",
+      "valueLabel": "Inductance",
+      "valuePlaceholder": "Required (e.g. 10uH)",
+      "packageLabel": "Package"
+    },
+    "IC": {
+      "nameLabel": "Full Part No.",
+      "namePlaceholder": "Required (e.g. STM32)",
+      "valueLabel": "Description",
+      "valuePlaceholder": "Optional (e.g. MCU)",
+      "packageLabel": "Package"
+    },
+    "Diode": {
+      "nameLabel": "Params",
+      "namePlaceholder": "e.g. 75V",
+      "valueLabel": "Model",
+      "valuePlaceholder": "e.g. 1N4148",
+      "packageLabel": "Package"
+    },
+    "Transistor": {
+      "nameLabel": "Params",
+      "namePlaceholder": "e.g. NPN",
+      "valueLabel": "Model",
+      "valuePlaceholder": "e.g. S8050",
+      "packageLabel": "Package"
+    },
+    "Connector": {
+      "nameLabel": "Spec/Model",
+      "namePlaceholder": "Required",
+      "valueLabel": "Remark",
+      "valuePlaceholder": "Optional",
+      "packageLabel": "Package"
+    },
+    "General": {
+      "nameLabel": "Name/Model",
+      "namePlaceholder": "Required",
+      "valueLabel": "Value/Param",
+      "valuePlaceholder": "Optional",
+      "packageLabel": "Package"
+    }
+  },
   "editDialog": {
     "titleEdit": "Edit Component",
     "titleAdd": "New Entry",
@@ -265,7 +336,7 @@
     "ranges": {
       "day": "Last 24 Hours",
       "week": "Weekly Trend",
-      "month": "Monthly Overview"
+      "month": "Mon. Overview"
     },
     "debug": {
       "label": "Debug Mode",
@@ -284,7 +355,8 @@
       "calendar": "R&D Calendar",
       "ranking": "Ranking",
       "consumption": "Quantity"
-    }
+    },
+    "dailyProject": "Daily R&D"
   },
   "dataCenter": {
     "title": "Data Center",
@@ -454,6 +526,24 @@
     },
     "empty": "No relevant records found"
   },
+  "log": {
+    "inventory": {
+      "stock": "Stock Update: {name} {value} ({old} ➝ {new})",
+      "create": "New Item: {name} {value}",
+      "update": "Update Item: {name} {value}",
+      "delete": "Delete Item: {name} {value}",
+      "deduct": "Production Deduct: {name} (-{qty})"
+    },
+    "project": {
+      "create": "New Project: {name}",
+      "update": "Update Project: {name}",
+      "delete": "Delete Project: {name}"
+    },
+    "backup": {
+      "export": "Export Bundle: {file} ({inv} items, {proj} projects)",
+      "import": "Import Bundle (Session: {session}) - {inv} items, {proj} projects"
+    }
+  },
   "settings": {
     "title": "Settings",
     "subtitle": "Preference & Data Management",
@@ -517,7 +607,7 @@
     "messages": {
       "langChanged": "Language Changed",
       "saved": "Settings saved",
-      "pathSelected": "New path selected (Migration pending)",
+      "pathSelected": "New path selected",
       "vacuumSuccess": "Database optimized successfully",
       "opFailed": "Operation failed"
     }

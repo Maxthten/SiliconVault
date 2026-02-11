@@ -38,6 +38,70 @@
     "relatedProjects": "关联项目",
     "viewAll": "查看全部"
   },
+  "categories": {
+    "Resistor": "电阻",
+    "Capacitor": "电容",
+    "Inductor": "电感",
+    "Diode": "二极管",
+    "Transistor": "三极管",
+    "IC": "芯片(IC)",
+    "Connector": "连接器",
+    "Module": "模块",
+    "Switch": "开关/按键",
+    "Other": "其他",
+    "Uncategorized": "未分类"
+  },
+  "fieldRules": {
+    "Resistor": {
+      "nameLabel": "精度/功率",
+      "namePlaceholder": "选填 (如 1%)",
+      "valueLabel": "阻值",
+      "valuePlaceholder": "必填 (如 10k)",
+      "packageLabel": "封装"
+    },
+    "Capacitor": {
+      "nameLabel": "耐压/材质",
+      "namePlaceholder": "选填 (如 50V)",
+      "valueLabel": "容值",
+      "valuePlaceholder": "必填 (如 100nF)",
+      "packageLabel": "封装"
+    },
+    "Inductor": {
+      "nameLabel": "电流/参数",
+      "namePlaceholder": "选填 (如 1A)",
+      "valueLabel": "感值",
+      "valuePlaceholder": "必填 (如 10uH)",
+      "packageLabel": "封装"
+    },
+    "IC": {
+      "nameLabel": "完整型号",
+      "namePlaceholder": "必填 (如 STM32F103)",
+      "valueLabel": "核心描述",
+      "valuePlaceholder": "选填 (如 MCU)",
+      "packageLabel": "封装"
+    },
+    "Diode": {
+      "nameLabel": "参数",
+      "namePlaceholder": "如 75V",
+      "valueLabel": "型号",
+      "valuePlaceholder": "如 1N4148",
+      "packageLabel": "封装"
+    },
+    "Transistor": {
+      "nameLabel": "参数",
+      "namePlaceholder": "如 NPN",
+      "valueLabel": "型号",
+      "valuePlaceholder": "如 S8050",
+      "packageLabel": "封装"
+    },
+    "General": {
+      "nameLabel": "型号/名称",
+      "namePlaceholder": "必填",
+      "valueLabel": "参数/数值",
+      "valuePlaceholder": "选填",
+      "packageLabel": "封装"
+    }
+  },
   "editDialog": {
     "titleEdit": "修改元件",
     "titleAdd": "新元件入库",
@@ -284,7 +348,8 @@
       "calendar": "研发日历",
       "ranking": "详细排名",
       "consumption": "消耗量"
-    }
+    },
+    "dailyProject": "日常研发"
   },
   "dataCenter": {
     "title": "数据中心",
@@ -453,6 +518,24 @@
       "undoFailed": "撤销失败：可能原数据依赖已丢失"
     },
     "empty": "没有找到相关记录"
+  },
+  "log": {
+    "inventory": {
+      "stock": "库存变更: {name} {value} ({old} ➝ {new})",
+      "create": "新增元件: {name} {value}",
+      "update": "修改元件: {name} {value}",
+      "delete": "删除元件: {name} {value}",
+      "deduct": "生产扣减: {name} (-{qty})"
+    },
+    "project": {
+      "create": "新建项目: {name}",
+      "update": "修改项目: {name}",
+      "delete": "删除项目: {name}"
+    },
+    "backup": {
+      "export": "导出资源包: {file} (包含 {inv} 元件, {proj} 项目)",
+      "import": "导入资源包 (会话: {session}) - 包含 {inv} 元件, {proj} 项目"
+    }
   },
   "settings": {
     "title": "系统设置",

@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
@@ -36,7 +37,7 @@ export interface InventoryItem {
   min_stock?: number
   image_paths?: string 
   datasheet_paths?: string
-  ref_count?: number // 被BOM引用的次数
+  ref_count?: number
 }
 
 export interface BomProject {
@@ -99,12 +100,14 @@ export interface AppSettings {
   maxBackups: number
 }
 
+// 更改为英文默认值，适应国际化新用户
 const DEFAULT_CATEGORIES = [
-  "电阻", "电容", "电感", "二极管", "三极管", 
-  "芯片(IC)", "连接器", "模块", "开关/按键", "其他"
+  "Resistor", "Capacitor", "Inductor", "Diode", "Transistor", 
+  "IC", "Connector", "Module", "Switch", "Other"
 ]
 
 const SYSTEM_DEFAULTS: Record<string, CategoryRule> = {
+  // --- 保留中文键 (兼容老用户数据) ---
   '电阻': { 
     nameLabel: '精度/功率', namePlaceholder: '选填 (如 1%)', 
     valueLabel: '阻值', valuePlaceholder: '必填 (如 10k)', 
@@ -129,24 +132,37 @@ const SYSTEM_DEFAULTS: Record<string, CategoryRule> = {
     packageLabel: '封装',
     layout: { topLeft: 'name', topRight: 'package', bottomLeft: 'value', bottomRight: 'location' }
   },
-  '二极管': { 
-    nameLabel: '参数', namePlaceholder: '如 75V', 
-    valueLabel: '型号', valuePlaceholder: '如 1N4148', 
-    packageLabel: '封装',
+  // --- 新增英文键 (适配新用户) ---
+  'Resistor': { 
+    nameLabel: 'Tolerance/Power', namePlaceholder: 'Optional (e.g. 1%)', 
+    valueLabel: 'Resistance', valuePlaceholder: 'Required (e.g. 10k)', 
+    packageLabel: 'Package',
     layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
   },
-  '三极管': { 
-    nameLabel: '参数', namePlaceholder: '如 NPN', 
-    valueLabel: '型号', valuePlaceholder: '如 S8050', 
-    packageLabel: '封装',
+  'Capacitor': { 
+    nameLabel: 'Voltage/Material', namePlaceholder: 'Optional (e.g. 50V)', 
+    valueLabel: 'Capacitance', valuePlaceholder: 'Required (e.g. 100nF)', 
+    packageLabel: 'Package',
     layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  },
+  'Inductor': { 
+    nameLabel: 'Current/Param', namePlaceholder: 'Optional (e.g. 1A)', 
+    valueLabel: 'Inductance', valuePlaceholder: 'Required (e.g. 10uH)', 
+    packageLabel: 'Package',
+    layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
+  },
+  'IC': { 
+    nameLabel: 'Full Part No.', namePlaceholder: 'Required (e.g. STM32)', 
+    valueLabel: 'Description', valuePlaceholder: 'Optional (e.g. MCU)', 
+    packageLabel: 'Package',
+    layout: { topLeft: 'name', topRight: 'package', bottomLeft: 'value', bottomRight: 'location' }
   }
 }
 
 const GENERIC_RULE: CategoryRule = {
-  nameLabel: '型号/名称', namePlaceholder: '必填',
-  valueLabel: '参数/数值', valuePlaceholder: '选填',
-  packageLabel: '封装',
+  nameLabel: 'Name/Model', namePlaceholder: 'Required',
+  valueLabel: 'Value/Param', valuePlaceholder: 'Optional',
+  packageLabel: 'Package',
   layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
 }
 
@@ -371,7 +387,7 @@ class DBManager {
   public fetchPackages(category?: string): string[] {
     let sql = "SELECT DISTINCT package FROM inventory WHERE package IS NOT NULL AND package != ''"
     const params: any[] = []
-    if (category && category !== '全部分类') {
+    if (category && category !== 'All Categories' && category !== '全部分类') {
       sql += " AND category = ?"
       params.push(category)
     }
@@ -381,7 +397,6 @@ class DBManager {
   }
 
   public fetchGrouped(filters: FilterOptions = {}): Record<string, InventoryItem[]> {
-    // 关键修改：左连接 project_items 并计算引用数量
     let sql = `
       SELECT inventory.*, COUNT(project_items.project_id) as ref_count 
       FROM inventory 
@@ -392,38 +407,29 @@ class DBManager {
 
     if (filters.keyword?.trim()) {
       const rawKey = filters.keyword.trim()
-      
       const greekMuKey = rawKey.replace(/u/gi, '\u03BC')
       const microSignKey = rawKey.replace(/u/gi, '\u00B5')
-
       const pRaw = `%${rawKey}%`
       const pGreek = `%${greekMuKey}%`
       const pMicro = `%${microSignKey}%`
 
-      // 注意：使用 inventory. 前缀明确表来源
       sql += ` AND (
         (inventory.name LIKE ? OR inventory.name LIKE ? OR inventory.name LIKE ?) OR 
         (inventory.value LIKE ? OR inventory.value LIKE ? OR inventory.value LIKE ?) OR 
         (inventory.location LIKE ? OR inventory.location LIKE ? OR inventory.location LIKE ?)
       )`
-      
-      params.push(
-        pRaw, pGreek, pMicro,
-        pRaw, pGreek, pMicro,
-        pRaw, pGreek, pMicro
-      )
+      params.push(pRaw, pGreek, pMicro, pRaw, pGreek, pMicro, pRaw, pGreek, pMicro)
     }
 
-    if (filters.category && filters.category !== '全部分类') {
+    if (filters.category && !['全部分类', 'All Categories'].includes(filters.category)) {
       sql += " AND inventory.category = ?"
       params.push(filters.category)
     }
-    if (filters.package && filters.package !== '全部封装') {
+    if (filters.package && !['全部封装', 'All Packages'].includes(filters.package)) {
       sql += " AND inventory.package = ?"
       params.push(filters.package)
     }
 
-    // 必须按 inventory.id 分组以计算准确的 count
     sql += " GROUP BY inventory.id"
 
     let orderMap = new Map<number, number>()
@@ -446,7 +452,7 @@ class DBManager {
 
     const grouped: Record<string, InventoryItem[]> = {}
     for (const row of rows) {
-      const cat = row.category || "未分类"
+      const cat = row.category || "Uncategorized"
       if (!grouped[cat]) grouped[cat] = []
       grouped[cat].push(row)
     }
@@ -460,11 +466,15 @@ class DBManager {
 
       this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?").run(qty, id)
 
+      // 使用 JSON 结构化日志
       this.addLog({
         op_type: 'STOCK',
         target_type: 'INVENTORY',
         target_id: id,
-        desc: `库存变更: ${oldItem.name} ${oldItem.value || ''} (${oldItem.quantity} ➝ ${qty})`,
+        desc: JSON.stringify({ 
+          key: 'log.inventory.stock', 
+          params: { name: oldItem.name, value: oldItem.value, old: oldItem.quantity, new: qty } 
+        }),
         old_data: JSON.stringify(oldItem),
         new_data: JSON.stringify({ ...oldItem, quantity: qty })
       })
@@ -485,7 +495,9 @@ class DBManager {
         `).all(id) as { name: string }[]
 
         const names = projects.map(p => `"${p.name}"`).join(', ')
-        throw new Error(`无法删除：该元件正在被以下项目使用：\n${names}\n请先在这些项目中移除该元件。`)
+        // 这里的错误信息是给前端 Toast 用的，建议前端捕获后翻译，后端暂时保留中文或改为英文
+        // 为了兼容性，这里暂时保留结构化错误信息，由前端处理（如果可能）或者直接抛出
+        throw new Error(`Dependents: ${names}`) 
       }
       throw error
     }
@@ -510,7 +522,10 @@ class DBManager {
           op_type: 'UPDATE',
           target_type: 'INVENTORY',
           target_id: data.id,
-          desc: `修改元件: ${data.name} ${data.value || ''}`,
+          desc: JSON.stringify({
+            key: 'log.inventory.update',
+            params: { name: data.name, value: data.value }
+          }),
           old_data: JSON.stringify(oldItem),
           new_data: JSON.stringify({ ...data, min_stock: minStock })
         })
@@ -533,7 +548,10 @@ class DBManager {
              op_type: 'CREATE',
              target_type: 'INVENTORY',
              target_id: newId,
-             desc: `新增元件: ${data.name} ${data.value || ''}`,
+             desc: JSON.stringify({
+               key: 'log.inventory.create',
+               params: { name: data.name, value: data.value }
+             }),
              old_data: JSON.stringify(null),
              new_data: JSON.stringify({ ...data, id: newId, min_stock: minStock })
            })
@@ -543,7 +561,6 @@ class DBManager {
     tx()
   }
 
-  // 修改：支持通过 ids 数组精确查询项目
   public getProjects(query: string = "", ids?: number[]): BomProject[] {
     let sql = "SELECT * FROM projects WHERE 1=1"
     const params: any[] = []
@@ -576,7 +593,6 @@ class DBManager {
     return rows
   }
 
-  // 获取指定元件关联的所有项目
   public getRelatedProjects(inventoryId: number): { id: number, name: string }[] {
     const sql = `
       SELECT p.id, p.name 
@@ -625,7 +641,10 @@ class DBManager {
           op_type: 'UPDATE',
           target_type: 'PROJECT',
           target_id: pid,
-          desc: `修改项目: ${project.name}`,
+          desc: JSON.stringify({
+            key: 'log.project.update',
+            params: { name: project.name }
+          }),
           old_data: JSON.stringify(oldSnapshot),
           new_data: JSON.stringify({ project, items: project.items })
         })
@@ -646,7 +665,10 @@ class DBManager {
           op_type: 'CREATE',
           target_type: 'PROJECT',
           target_id: pid,
-          desc: `新建项目: ${project.name}`,
+          desc: JSON.stringify({
+            key: 'log.project.create',
+            params: { name: project.name }
+          }),
           old_data: undefined,
           new_data: JSON.stringify({ project: { ...project, id: pid }, items: project.items })
         })
@@ -669,7 +691,10 @@ class DBManager {
         op_type: 'DELETE',
         target_type: 'PROJECT',
         target_id: id,
-        desc: `删除项目: ${project.name}`,
+        desc: JSON.stringify({
+          key: 'log.project.delete',
+          params: { name: project.name }
+        }),
         old_data: JSON.stringify(snapshot)
       })
     })
@@ -690,7 +715,10 @@ class DBManager {
              op_type: 'STOCK',
              target_type: 'INVENTORY',
              target_id: item.id,
-             desc: `生产扣减: ${oldItem.name} (-${item.deductQty})`,
+             desc: JSON.stringify({
+               key: 'log.inventory.deduct',
+               params: { name: oldItem.name, qty: item.deductQty }
+             }),
              old_data: JSON.stringify(oldItem),
              new_data: JSON.stringify({ ...oldItem, quantity: oldItem.quantity - item.deductQty })
           })
@@ -770,8 +798,8 @@ class DBManager {
 
       for (const item of items) {
         const safeItem = {
-          category: item.category || '未分类',
-          name: item.name || '未知元件',
+          category: item.category || 'Uncategorized',
+          name: item.name || 'Unknown',
           value: item.value || '',
           package: item.package || '',
           quantity: Number(item.quantity) || 0,

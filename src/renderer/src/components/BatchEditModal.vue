@@ -1,3 +1,20 @@
+<!--
+ * SiliconVault - Electronic Component Inventory Management System
+ * Copyright (C) 2026 Maxton Niu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { 
@@ -12,6 +29,21 @@ import EditDialog from './EditDialog.vue'
 import { useI18n } from '../utils/i18n' 
 
 const { t } = useI18n()
+
+// 映射表：用于在视觉上合并新旧数据
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
 
 interface InventoryItem {
   id: number
@@ -71,11 +103,34 @@ const filteredSourceList = computed(() => {
   return result.slice(0, 100)
 })
 
+// 改造后的分类选项：实现中英文视觉合并
 const categoryOptions = computed<any[]>(() => {
   const list = props.allInventory || []
-  const cats = new Set(list.map(i => i.category).filter(c => c))
-  // 使用翻译后的“全部分类”
-  return [{ label: t('inventory.allCategories'), value: null }, ...Array.from(cats).map(c => ({ label: c, value: c }))]
+  // 获取当前列表中实际存在的所有分类
+  const rawCats = new Set(list.map(i => i.category).filter(c => c))
+  
+  const mergedMap = new Map<string, { label: string, value: string }>()
+
+  rawCats.forEach((rawCat) => {
+    const canonicalKey = LEGACY_MAP[rawCat] || rawCat
+    const transKey = `categories.${canonicalKey}`
+    const translated = t(transKey)
+    const displayLabel = translated !== transKey ? translated : rawCat
+
+    if (mergedMap.has(displayLabel)) {
+      // 如果当前是旧数据格式，优先保留旧数据值，防止筛选失效
+      if (LEGACY_MAP[rawCat]) {
+        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+      }
+    } else {
+      mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
+    }
+  })
+
+  const mergedOptions = Array.from(mergedMap.values())
+  mergedOptions.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+
+  return [{ label: t('inventory.allCategories'), value: null }, ...mergedOptions]
 })
 
 // 动作

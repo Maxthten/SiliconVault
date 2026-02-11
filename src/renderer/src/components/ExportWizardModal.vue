@@ -26,7 +26,7 @@ import {
   DocumentTextOutline, ArchiveOutline
 } from '@vicons/ionicons5'
 import Papa from 'papaparse'
-import { useI18n } from '../utils/i18n' // 引入国际化
+import { useI18n } from '../utils/i18n' 
 
 const props = defineProps<{ 
   show: boolean
@@ -36,6 +36,21 @@ const props = defineProps<{
 const emit = defineEmits(['update:show'])
 const message = useMessage()
 const { t } = useI18n()
+
+// 映射表
+const LEGACY_MAP: Record<string, string> = {
+  '电阻': 'Resistor',
+  '电容': 'Capacitor',
+  '电感': 'Inductor',
+  '二极管': 'Diode',
+  '三极管': 'Transistor',
+  '芯片(IC)': 'IC',
+  '连接器': 'Connector',
+  '模块': 'Module',
+  '开关/按键': 'Switch',
+  '其他': 'Other',
+  '未分类': 'Uncategorized'
+}
 
 const activeTab = ref<'inventory' | 'project'>('inventory')
 const isProcessing = ref(false)
@@ -67,7 +82,10 @@ const getItemDisplay = (item: any) => {
     }
   }
 
-  const rule = categoryRules.value[item.category]
+  const rawCat = item.category
+  const ruleKey = LEGACY_MAP[rawCat] || rawCat
+  const rule = categoryRules.value[ruleKey]
+  
   let targetKey = 'name'
 
   if (rule?.layout) {
@@ -91,12 +109,20 @@ const getItemDisplay = (item: any) => {
   return {
     primary,
     side,
-    // 格式化库存显示
     secondary: t('exportWizard.item.stockInfo', { 
       package: item.package || '-', 
       quantity: item.quantity 
     })
   }
+}
+
+// 获取分类显示名称
+const getCategoryDisplay = (rawCat: string) => {
+  if (!rawCat) return ''
+  const canonicalKey = LEGACY_MAP[rawCat] || rawCat
+  const transKey = `categories.${canonicalKey}`
+  const translated = t(transKey)
+  return translated !== transKey ? translated : rawCat
 }
 
 const loadData = async () => {
@@ -142,12 +168,26 @@ const filteredList = computed(() => {
   if (!searchQuery.value) return listData.value
   const q = searchQuery.value.toLowerCase()
   
-  return listData.value.filter(item => 
-    (item.name && item.name.toLowerCase().includes(q)) ||
-    (item.value && item.value.toLowerCase().includes(q)) ||
-    (item.description && item.description.toLowerCase().includes(q)) ||
-    (item.category && item.category.toLowerCase().includes(q))
-  )
+  return listData.value.filter(item => {
+    const basicMatch = (item.name && item.name.toLowerCase().includes(q)) ||
+      (item.value && item.value.toLowerCase().includes(q)) ||
+      (item.description && item.description.toLowerCase().includes(q))
+    
+    if (basicMatch) return true
+
+    if (item.category) {
+      const raw = item.category.toLowerCase()
+      if (raw.includes(q)) return true 
+
+      const canonical = (LEGACY_MAP[item.category] || item.category).toLowerCase()
+      if (canonical.includes(q)) return true 
+
+      const display = getCategoryDisplay(item.category).toLowerCase()
+      if (display.includes(q)) return true 
+    }
+
+    return false
+  })
 })
 
 const isAllSelected = computed(() => {
@@ -178,28 +218,33 @@ const handleExportCSV = async () => {
     
     const cleanData = targets.map(item => {
       const { id, image_paths, datasheet_paths, files, ...rest } = item
-      return rest
+      
+      // 导出前转换分类为当前语言显示值
+      return {
+        ...rest,
+        category: getCategoryDisplay(item.category) 
+      }
     })
 
     const csv = Papa.unparse(cleanData)
     const prefix = activeTab.value === 'inventory' ? 'Inventory' : 'Projects'
+    const typeLabel = activeTab.value === 'inventory' ? t('exportWizard.tabs.inventory') : t('exportWizard.tabs.project')
     
     await window.api.exportData({
-      title: t('exportWizard.exportCsvTitle', { type: prefix }),
+      title: t('exportWizard.exportCsvTitle', { type: typeLabel }),
       filename: `${prefix}_Selection_${new Date().toISOString().split('T')[0]}.csv`,
       content: csv
     })
     
     message.success(t('exportWizard.messages.csvSuccess'))
-    return true
     emit('update:show', false)
+    return true
   } catch (e) {
     message.error(t('dataCenter.messages.exportFailed'))
     return false
   } finally {
     isProcessing.value = false
   }
-
 }
 
 const handleExportBundle = async () => {
@@ -210,6 +255,7 @@ const handleExportBundle = async () => {
     const rawIds = JSON.parse(JSON.stringify(selectedIds.value))
 
     const res = await window.api.exportBundle({
+      title: t('exportWizard.buttons.exportBundle'), 
       type: 'custom',
       inventoryIds: activeTab.value === 'inventory' ? rawIds : undefined,
       projectIds: activeTab.value === 'project' ? rawIds : undefined
@@ -243,7 +289,7 @@ const handleExportBundle = async () => {
           <n-icon size="22" :component="ArchiveOutline" class="header-icon" />
           <span>{{ t('dataCenter.export.title') }}</span>
         </div>
-        <n-button text circle @click="emit('update:show', false)">
+        <n-button text circle @click="emit('update:show', false)" class="close-btn">
           <template #icon><n-icon size="20" :component="Close" class="close-icon" /></template>
         </n-button>
       </div>
@@ -293,7 +339,7 @@ const handleExportBundle = async () => {
               <div class="item-info">
                 <div class="main-text">
                   <n-tag v-if="item.category" size="small" :bordered="false" class="cat-tag" style="margin-right: 8px">
-                    {{ item.category }}
+                    {{ getCategoryDisplay(item.category) }}
                   </n-tag>
                   {{ getItemDisplay(item).primary }} 
                   <span v-if="getItemDisplay(item).side" class="sub-val">[{{ getItemDisplay(item).side }}]</span>
@@ -349,7 +395,6 @@ const handleExportBundle = async () => {
 </template>
 
 <style scoped>
-/* 样式保持不变 */
 .wizard-modal {
   width: 640px;
   background-color: var(--bg-modal); 
@@ -366,6 +411,19 @@ const handleExportBundle = async () => {
 }
 .title { font-size: 17px; font-weight: bold; display: flex; align-items: center; gap: 10px; color: var(--text-primary); }
 .header-icon { color: var(--text-primary); }
+
+.close-btn {
+  width: 32px; 
+  height: 32px;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  border-radius: 50%;
+  padding: 0;
+}
+.close-btn:hover {
+  background-color: var(--border-hover);
+}
 .close-icon { color: var(--text-tertiary); }
 
 .modal-content { padding: 20px 24px; }

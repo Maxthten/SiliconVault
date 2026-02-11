@@ -32,7 +32,7 @@ import {
   CloudUploadOutline
 } from '@vicons/ionicons5'
 import { NIcon, NSpin, useMessage, useDialog, NInput, NSelect } from 'naive-ui'
-import { useI18n } from '../utils/i18n' // 引入国际化
+import { useI18n } from '../utils/i18n'
 
 interface Log {
   id: number
@@ -55,7 +55,6 @@ const message = useMessage()
 const dialog = useDialog()
 const { t, locale } = useI18n()
 
-// 使用 computed 确保语言切换时选项自动更新
 const typeOptions = computed(() => [
   { label: t('operationLog.filters.all'), value: null },
   { label: t('operationLog.types.stock'), value: 'STOCK' },
@@ -123,6 +122,19 @@ const getStockDelta = (log: Log) => {
 }
 
 const getDynamicLogTitle = (log: Log) => {
+  // 1. 优先尝试解析 JSON 格式的新版日志
+  try {
+    if (log.desc.startsWith('{')) {
+      const jsonDesc = JSON.parse(log.desc)
+      if (jsonDesc.key) {
+        return t(jsonDesc.key, jsonDesc.params)
+      }
+    }
+  } catch (e) {
+    // 解析失败，说明不是 JSON 格式，回退到后续逻辑
+  }
+
+  // 2. 旧版日志的兼容处理逻辑 (IMPORT/EXPORT 直接显示)
   if (['IMPORT', 'EXPORT'].includes(log.op_type)) return log.desc
 
   try {
@@ -143,7 +155,7 @@ const getDynamicLogTitle = (log: Log) => {
     let displayName = snapshot[targetKey]
     if (!displayName) displayName = snapshot.name || t('common.unknown')
 
-    // 动态拼接前缀
+    // 根据操作类型拼接前缀 (兼容旧数据)
     switch (log.op_type) {
       case 'CREATE': return `${t('operationLog.prefixes.create')}: ${displayName}`
       case 'UPDATE': return `${t('operationLog.prefixes.update')}: ${displayName}`
@@ -184,10 +196,8 @@ const handleUndo = (log: Log) => {
   })
 }
 
-// 核心修改：根据当前语言环境格式化时间
 const formatTime = (isoString: string) => {
   const date = new Date(isoString)
-  // 使用 locale.value 确保格式跟随语言 (如 en-US 显示 AM/PM)
   return date.toLocaleString(locale.value, {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
   }).replace(/\//g, '-')
@@ -297,7 +307,7 @@ onMounted(() => { loadLogs() })
 </template>
 
 <style scoped>
-/* 样式保持不变，省略以节省篇幅 */
+/* 样式保持不变 */
 .log-page {
   height: 100vh;
   display: flex; flex-direction: column; 
