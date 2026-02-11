@@ -1,4 +1,4 @@
-[简体中文](./README.md) | **English**
+**Read this in other languages: [English](README.en.md), [中文](README.md).**
 
 # SiliconVault - Electronic Component Inventory Management System
 
