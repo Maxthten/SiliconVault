@@ -46,6 +46,7 @@ const api = {
   fetchPackages: (category) => ipcRenderer.invoke('get-packages', category),
   fetchInventory: (filters) => ipcRenderer.invoke('get-inventory', filters),
   updateQty: (id, qty) => ipcRenderer.invoke('update-qty', { id, qty }),
+  batchUpdateQty: (updates) => ipcRenderer.invoke('batch-update-qty', updates),
   deleteItem: (id) => ipcRenderer.invoke('delete-item', id),
   upsertItem: (data) => ipcRenderer.invoke('upsert-item', data),
 
@@ -87,6 +88,7 @@ const api = {
 
   // --- 7. 系统设置与资源管理 ---
   getStoragePath: () => ipcRenderer.invoke('get-storage-path'),
+  getRuntimeEnvironment: () => ipcRenderer.invoke('get-runtime-environment'),
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   openFile: (relativePath) => ipcRenderer.invoke('open-file', relativePath),
   showItemInFolder: (relativePath) => ipcRenderer.invoke('show-item-in-folder', relativePath),

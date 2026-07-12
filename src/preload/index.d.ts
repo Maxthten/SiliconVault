@@ -83,6 +83,12 @@ export interface AppSettings {
   maxBackups: number
 }
 
+export interface RuntimeEnvironment {
+  mode: 'development' | 'production'
+  isDevelopment: boolean
+  storagePathLocked: boolean
+}
+
 export interface ScanResult {
   scanId: string
   success: boolean;
@@ -152,6 +158,7 @@ declare global {
       fetchPackages: (category?: string) => Promise<string[]>
       fetchInventory: (filters: FilterOptions) => Promise<Record<string, InventoryItem[]>>
       updateQty: (id: number, qty: number) => Promise<void>
+      batchUpdateQty: (updates: Array<{ id: number, qty: number }>) => Promise<void>
       deleteItem: (id: number) => Promise<void>
       upsertItem: (data: InventoryItem) => Promise<void>
 
@@ -207,6 +214,7 @@ declare global {
 
       // --- 资源与系统设置 ---
       getStoragePath: () => Promise<string>
+      getRuntimeEnvironment: () => Promise<RuntimeEnvironment>
       openDataFolder: () => Promise<void>
       openFile: (relativePath: string) => Promise<void>
       showItemInFolder: (relativePath: string) => Promise<void>

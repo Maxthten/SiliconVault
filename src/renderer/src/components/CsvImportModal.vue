@@ -44,6 +44,13 @@ const csvData = ref<any[]>([])
 const csvHeaders = ref<string[]>([])
 const importMode = ref<ImportStrategy>('skip')
 
+const readCsvInteger = (row: Record<string, unknown>, aliases: string[], fallback: number) => {
+  const aliasSet = new Set(aliases.map(alias => alias.toLowerCase()))
+  const entry = Object.entries(row).find(([key]) => aliasSet.has(key.trim().toLowerCase()))
+  if (!entry || entry[1] === '' || entry[1] === undefined || entry[1] === null) return fallback
+  return Number(entry[1])
+}
+
 // === 监听文件变化自动解析 ===
 watch(() => props.file, (newFile) => {
   if (newFile && props.show) {
@@ -95,9 +102,9 @@ const handleConfirm = async () => {
       name: row['Name'] || row['name'] || row['名称'] || row['型号'] || '未知',
       value: row['Value'] || row['value'] || row['值'] || row['规格'] || '',
       package: row['Package'] || row['package'] || row['封装'] || '',
-      quantity: Number(row['Quantity'] || row['quantity'] || row['数量']) || 0,
+      quantity: readCsvInteger(row, ['Quantity', '数量'], 0),
       location: row['Location'] || row['location'] || row['库位'] || row['位置'] || '',
-      min_stock: Number(row['MinStock'] || row['min_stock'] || row['预警阈值']) || 10
+      min_stock: readCsvInteger(row, ['MinStock', 'min_stock', '预警阈值'], 10)
     }))
 
     const res = await window.api.batchImportInventory(items, importMode.value)

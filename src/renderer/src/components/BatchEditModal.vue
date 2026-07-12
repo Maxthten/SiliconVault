@@ -167,18 +167,18 @@ watch(() => props.allInventory, (newVal) => {
 const executeBatchUpdate = async () => {
   isLoading.value = true
   try {
-    const tasks = selectedList.value.map(item => {
+    const updates = selectedList.value.map(item => {
       let newQty = item.quantity
       if (item.mode === 'add') {
         newQty += item.delta
       } else {
         newQty -= item.delta 
       }
-      return window.api.updateQty(item.id, newQty)
+      return { id: item.id, qty: newQty }
     })
     
-    await Promise.all(tasks)
-    message.success(t('batchEdit.messages.updateSuccess', { count: tasks.length }))
+    await window.api.batchUpdateQty(updates)
+    message.success(t('batchEdit.messages.updateSuccess', { count: updates.length }))
     emit('refresh')
     emit('update:show', false)
     selectedList.value = []
@@ -200,17 +200,13 @@ const handleCheckAndExecute = () => {
   })
 
   if (riskyItems.length > 0) {
-    dialog.warning({
+    dialog.error({
       title: t('batchEdit.warning.title'),
       content: t('batchEdit.warning.content', { count: riskyItems.length }) + '\n\n' + 
                riskyItems.slice(0, 3).map(i => `• ${i.value || i.name}`).join('\n') + 
                (riskyItems.length > 3 ? `\n...${t('batchEdit.warning.more', { count: riskyItems.length })}` : '') + 
-               `\n\n${t('batchEdit.warning.confirm')}`,
+               `\n\n${t('batchEdit.warning.blocked')}`,
       positiveText: t('batchEdit.warning.positive'),
-      negativeText: t('common.cancel'),
-      onPositiveClick: () => {
-        executeBatchUpdate()
-      }
     })
   } else {
     executeBatchUpdate()

@@ -31,7 +31,8 @@
     "title": "库存管理",
     "category": "分类",
     "package": "封装",
-    "deleteConfirm": "删除后无法恢复，确定吗？",
+    "deleteConfirm": "删除后可在操作历史中撤销，确定删除吗？",
+    "deleteBlocked": "该元件仍被以下项目引用，无法删除：{projects}",
     "allCategories": "全部分类",
     "allPackages": "全部封装",
     "clickToOpen": "点击打开原图",
@@ -192,10 +193,11 @@
     },
     "warning": {
       "title": "库存不足警告",
-      "content": "以下 {count} 个元件库存将被扣减为负数（透支）：",
+      "content": "以下 {count} 个元件的库存会变成负数：",
       "more": "等共 {count} 个",
-      "confirm": "确定要继续吗？",
-      "positive": "确认透支"
+      "confirm": "请先调整扣减数量。",
+      "blocked": "为保证库存数据有效，本次批量操作已阻止，请先调整扣减数量。",
+      "positive": "知道了"
     }
   },
   "bom": {
@@ -579,7 +581,9 @@
       "backupPathLabel": "备份存储位置",
       "defaultPath": "默认路径...",
       "currentLocation": "当前存储位置",
-      "locationDesc": "元器件数据库及文件仓库"
+      "locationDesc": "元器件数据库及文件仓库",
+      "developmentEnvironment": "开发隔离环境",
+      "developmentLocked": "开发环境的数据、附件与备份已锁定在项目 SiliconVaultdata 目录中"
     },
     "advanced": {
       "cleanAssets": "冗余文件清理",

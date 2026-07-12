@@ -21,8 +21,10 @@ import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
 import Store from 'electron-store'
-
-const store = new Store()
+import {
+  ensureDevelopmentStoragePath,
+  isDevelopmentStorageMode
+} from './environment'
 
 // --- 类型定义 ---
 
@@ -100,6 +102,18 @@ export interface AppSettings {
   maxBackups: number
 }
 
+export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
+
+export interface QuantityUpdate {
+  id: number
+  qty: number
+}
+
+interface DeductionItem {
+  id: number
+  deductQty: number
+}
+
 // 更改为英文默认值，适应国际化新用户
 const DEFAULT_CATEGORIES = [
   "Resistor", "Capacitor", "Inductor", "Diode", "Transistor", 
@@ -166,18 +180,28 @@ const GENERIC_RULE: CategoryRule = {
   layout: { topLeft: 'value', topRight: 'package', bottomLeft: 'name', bottomRight: 'location' }
 }
 
-class DBManager {
+export class DBManager {
   private db: Database.Database
   private userDataPath: string
 
-  constructor() {
-    const defaultPath = path.join(app.getPath('documents'), 'SiliconVault')
-    this.userDataPath = (store.get('storagePath') as string) || defaultPath
+  constructor(storagePathOverride?: string) {
+    if (storagePathOverride) {
+      this.userDataPath = path.resolve(storagePathOverride)
+    } else if (isDevelopmentStorageMode()) {
+      this.userDataPath = ensureDevelopmentStoragePath()
+    } else {
+      const store = new Store()
+      const defaultPath = path.join(app.getPath('documents'), 'SiliconVault')
+      this.userDataPath = (store.get('storagePath') as string) || defaultPath
+    }
 
     if (!fs.existsSync(this.userDataPath)) {
       try {
         fs.mkdirSync(this.userDataPath, { recursive: true })
       } catch (e) {
+        if (isDevelopmentStorageMode()) {
+          throw new Error(`Failed to create isolated development storage: ${this.userDataPath}`)
+        }
         console.error('创建数据目录失败，回退到临时目录', e)
         this.userDataPath = app.getPath('userData')
       }
@@ -185,9 +209,11 @@ class DBManager {
 
     const dbPath = path.join(this.userDataPath, 'inventory.db')
     this.db = new Database(dbPath)
-    
+    this.db.pragma('foreign_keys = ON')
+
     this.initTable()
     this.migrateSchema()
+    this.cleanupOrphanProjectItems()
   }
 
   public getDb(): Database.Database {
@@ -460,9 +486,12 @@ class DBManager {
   }
 
   public updateQty(id: number, qty: number) {
+    this.assertPositiveInteger(id, 'id')
+    this.assertNonNegativeInteger(qty, 'qty')
+
     const tx = this.db.transaction(() => {
       const oldItem = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(id) as any
-      if (!oldItem) return
+      if (!oldItem) throw new Error(`NOT_FOUND:inventory ${id}`)
 
       this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?").run(qty, id)
 
@@ -482,28 +511,90 @@ class DBManager {
     tx()
   }
 
-  public deleteItem(id: number) {
-    try {
-      this.db.prepare('DELETE FROM inventory WHERE id = ?').run(id)
-    } catch (error: any) {
-      if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-        const projects = this.db.prepare(`
-          SELECT p.name 
-          FROM projects p
-          JOIN project_items pi ON p.id = pi.project_id
-          WHERE pi.inventory_id = ?
-        `).all(id) as { name: string }[]
-
-        const names = projects.map(p => `"${p.name}"`).join(', ')
-        // 这里的错误信息是给前端 Toast 用的，建议前端捕获后翻译，后端暂时保留中文或改为英文
-        // 为了兼容性，这里暂时保留结构化错误信息，由前端处理（如果可能）或者直接抛出
-        throw new Error(`Dependents: ${names}`) 
-      }
-      throw error
+  public batchUpdateQty(updates: QuantityUpdate[]) {
+    if (!Array.isArray(updates) || updates.length === 0) {
+      throw new Error('VALIDATION_ERROR:updates must be a non-empty array')
     }
+
+    const ids = new Set<number>()
+    for (const update of updates) {
+      this.assertPositiveInteger(update?.id, 'updates.id')
+      this.assertNonNegativeInteger(update?.qty, 'updates.qty')
+      if (ids.has(update.id)) {
+        throw new Error(`VALIDATION_ERROR:duplicate inventory id ${update.id}`)
+      }
+      ids.add(update.id)
+    }
+
+    const getStmt = this.db.prepare("SELECT * FROM inventory WHERE id = ?")
+    const updateStmt = this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?")
+    const tx = this.db.transaction(() => {
+      const oldItems = updates.map(update => {
+        const oldItem = getStmt.get(update.id) as any
+        if (!oldItem) throw new Error(`NOT_FOUND:inventory ${update.id}`)
+        return { update, oldItem }
+      })
+
+      for (const { update, oldItem } of oldItems) {
+        updateStmt.run(update.qty, update.id)
+        this.addLog({
+          op_type: 'STOCK',
+          target_type: 'INVENTORY',
+          target_id: update.id,
+          desc: JSON.stringify({
+            key: 'log.inventory.stock',
+            params: {
+              name: oldItem.name,
+              value: oldItem.value,
+              old: oldItem.quantity,
+              new: update.qty
+            }
+          }),
+          old_data: JSON.stringify(oldItem),
+          new_data: JSON.stringify({ ...oldItem, quantity: update.qty })
+        })
+      }
+    })
+    tx()
+  }
+
+  public deleteItem(id: number) {
+    this.assertPositiveInteger(id, 'id')
+
+    const tx = this.db.transaction(() => {
+      const oldItem = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(id) as any
+      if (!oldItem) throw new Error(`NOT_FOUND:inventory ${id}`)
+
+      const projects = this.db.prepare(`
+        SELECT DISTINCT p.name
+        FROM projects p
+        JOIN project_items pi ON p.id = pi.project_id
+        WHERE pi.inventory_id = ?
+        ORDER BY p.name ASC
+      `).all(id) as { name: string }[]
+
+      if (projects.length > 0) {
+        throw new Error(`INVENTORY_IN_USE:${JSON.stringify(projects.map(project => project.name))}`)
+      }
+
+      this.db.prepare('DELETE FROM inventory WHERE id = ?').run(id)
+      this.addLog({
+        op_type: 'DELETE',
+        target_type: 'INVENTORY',
+        target_id: id,
+        desc: JSON.stringify({
+          key: 'log.inventory.delete',
+          params: { name: oldItem.name, value: oldItem.value }
+        }),
+        old_data: JSON.stringify(oldItem)
+      })
+    })
+    tx()
   }
 
   public upsert(data: InventoryItem) {
+    this.validateInventoryItem(data)
+
     const minStock = (data.min_stock !== undefined && data.min_stock !== null) ? data.min_stock : 10
     const imgPaths = data.image_paths || '[]'
     const docPaths = data.datasheet_paths || '[]'
@@ -511,6 +602,7 @@ class DBManager {
     const tx = this.db.transaction(() => {
       if (data.id) {
         const oldItem = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(data.id) as any
+        if (!oldItem) throw new Error(`NOT_FOUND:inventory ${data.id}`)
         
         this.db.prepare(`
           UPDATE inventory 
@@ -594,6 +686,8 @@ class DBManager {
   }
 
   public getRelatedProjects(inventoryId: number): { id: number, name: string }[] {
+    this.assertPositiveInteger(inventoryId, 'inventoryId')
+
     const sql = `
       SELECT p.id, p.name 
       FROM projects p
@@ -605,6 +699,8 @@ class DBManager {
   }
 
   public getProjectDetail(projectId: number): BomItem[] {
+    this.assertPositiveInteger(projectId, 'projectId')
+
     const sql = `
       SELECT 
         pi.inventory_id, pi.quantity,
@@ -618,12 +714,15 @@ class DBManager {
   }
 
   public saveProject(project: BomProject) {
+    this.validateProject(project)
+
     const tx = this.db.transaction(() => {
       let pid = project.id
       const filesJson = project.files || '[]'
 
       if (pid) {
         const oldProject = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(pid)
+        if (!oldProject) throw new Error(`NOT_FOUND:project ${pid}`)
         const oldItems = this.db.prepare("SELECT * FROM project_items WHERE project_id = ?").all(pid)
         const oldSnapshot = { project: oldProject, items: oldItems }
 
@@ -678,9 +777,11 @@ class DBManager {
   }
 
   public deleteProject(id: number) {
+    this.assertPositiveInteger(id, 'id')
+
     const tx = this.db.transaction(() => {
       const project = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as any
-      if (!project) return
+      if (!project) throw new Error(`NOT_FOUND:project ${id}`)
       const items = this.db.prepare("SELECT * FROM project_items WHERE project_id = ?").all(id)
       const snapshot = { project, items }
 
@@ -701,42 +802,102 @@ class DBManager {
     tx()
   }
 
-  public executeDeduction(items: { id: number, deductQty: number }[]) {
-    const stmt = this.db.prepare("UPDATE inventory SET quantity = quantity - ? WHERE id = ?")
+  public executeDeduction(items: DeductionItem[]) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('VALIDATION_ERROR:deduction items must be a non-empty array')
+    }
+
+    const ids = new Set<number>()
+    for (const item of items) {
+      this.assertPositiveInteger(item?.id, 'deduction.id')
+      this.assertPositiveInteger(item?.deductQty, 'deduction.deductQty')
+      if (ids.has(item.id)) {
+        throw new Error(`VALIDATION_ERROR:duplicate inventory id ${item.id}`)
+      }
+      ids.add(item.id)
+    }
+
+    const stmt = this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?")
     const getStmt = this.db.prepare("SELECT * FROM inventory WHERE id = ?")
     
     const tx = this.db.transaction(() => {
-      for (const item of items) {
+      const oldItems = items.map(item => {
         const oldItem = getStmt.get(item.id) as any
-        stmt.run(item.deductQty, item.id)
-        
-        if (oldItem) {
-          this.addLog({
-             op_type: 'STOCK',
-             target_type: 'INVENTORY',
-             target_id: item.id,
-             desc: JSON.stringify({
-               key: 'log.inventory.deduct',
-               params: { name: oldItem.name, qty: item.deductQty }
-             }),
-             old_data: JSON.stringify(oldItem),
-             new_data: JSON.stringify({ ...oldItem, quantity: oldItem.quantity - item.deductQty })
-          })
+        if (!oldItem) throw new Error(`NOT_FOUND:inventory ${item.id}`)
+        if (oldItem.quantity < item.deductQty) {
+          throw new Error(`INSUFFICIENT_STOCK:${JSON.stringify({
+            id: item.id,
+            available: oldItem.quantity,
+            requested: item.deductQty
+          })}`)
         }
+        return { item, oldItem }
+      })
+
+      for (const { item, oldItem } of oldItems) {
+        const newQty = oldItem.quantity - item.deductQty
+        stmt.run(newQty, item.id)
+        this.addLog({
+          op_type: 'STOCK',
+          target_type: 'INVENTORY',
+          target_id: item.id,
+          desc: JSON.stringify({
+            key: 'log.inventory.deduct',
+            params: { name: oldItem.name, qty: item.deductQty }
+          }),
+          old_data: JSON.stringify(oldItem),
+          new_data: JSON.stringify({ ...oldItem, quantity: newQty })
+        })
       }
     })
     tx()
   }
 
   public updateSortOrder(tableName: 'projects' | 'inventory', ids: number[]) {
-    if (!['projects', 'inventory'].includes(tableName)) return
-    
-    try {
-        this.db.exec(`CREATE TABLE IF NOT EXISTS sort_orders (table_name TEXT PRIMARY KEY, id_order TEXT)`)
-    } catch(e) {}
+    if (!['projects', 'inventory'].includes(tableName)) {
+      throw new Error('VALIDATION_ERROR:unknown sort table')
+    }
+    if (!Array.isArray(ids)) {
+      throw new Error('VALIDATION_ERROR:sort ids must be an array')
+    }
 
-    const stmt = this.db.prepare(`INSERT OR REPLACE INTO sort_orders (table_name, id_order) VALUES (?, ?)`)
-    stmt.run(tableName, JSON.stringify(ids))
+    const submitted = new Set<number>()
+    for (const id of ids) {
+      this.assertPositiveInteger(id, 'sort.id')
+      if (submitted.has(id)) throw new Error(`VALIDATION_ERROR:duplicate sort id ${id}`)
+      submitted.add(id)
+    }
+
+    const table = tableName === 'projects' ? 'projects' : 'inventory'
+    const existingIds = (this.db.prepare(`SELECT id FROM ${table} ORDER BY id ASC`).all() as { id: number }[])
+      .map(row => row.id)
+    const existingSet = new Set(existingIds)
+    if (ids.some(id => !existingSet.has(id))) {
+      throw new Error('VALIDATION_ERROR:sort order contains missing ids')
+    }
+
+    let previousIds: number[] = []
+    const row = this.db.prepare("SELECT id_order FROM sort_orders WHERE table_name = ?").get(tableName) as any
+    if (row?.id_order) {
+      try {
+        const parsed = JSON.parse(row.id_order)
+        if (Array.isArray(parsed)) previousIds = parsed
+      } catch {
+        previousIds = []
+      }
+    }
+
+    const mergedIds = [...ids]
+    const seen = new Set(ids)
+    for (const id of [...previousIds, ...existingIds]) {
+      if (Number.isInteger(id) && existingSet.has(id) && !seen.has(id)) {
+        mergedIds.push(id)
+        seen.add(id)
+      }
+    }
+
+    this.db.prepare(`INSERT OR REPLACE INTO sort_orders (table_name, id_order) VALUES (?, ?)`)
+      .run(tableName, JSON.stringify(mergedIds))
   }
 
   public getCategoryRule(category: string): CategoryRule {
@@ -771,7 +932,14 @@ class DBManager {
     return projects
   }
 
-  public batchImportInventory(items: any[], mode: 'skip' | 'overwrite' | 'merge') {
+  public batchImportInventory(items: any[], mode: ImportStrategy) {
+    if (!Array.isArray(items)) {
+      throw new Error('VALIDATION_ERROR:import items must be an array')
+    }
+    if (!['skip', 'overwrite', 'keep_both'].includes(mode)) {
+      throw new Error('VALIDATION_ERROR:unknown import strategy')
+    }
+
     const insertStmt = this.db.prepare(`
       INSERT INTO inventory (category, name, value, package, quantity, location, min_stock, image_paths, datasheet_paths)
       VALUES (@category, @name, @value, @package, @quantity, @location, @min_stock, '[]', '[]')
@@ -783,13 +951,9 @@ class DBManager {
       WHERE id=@id
     `)
 
-    const addQtyStmt = this.db.prepare(`
-      UPDATE inventory SET quantity = quantity + ? WHERE id = ?
-    `)
-
     const findStmt = this.db.prepare(`
       SELECT id, quantity FROM inventory 
-      WHERE name = ? AND value = ? AND package = ?
+      WHERE category = ? AND name = ? AND value = ? AND package = ? AND location = ?
     `)
 
     const tx = this.db.transaction(() => {
@@ -797,29 +961,54 @@ class DBManager {
       let skipCount = 0
 
       for (const item of items) {
-        const safeItem = {
-          category: item.category || 'Uncategorized',
-          name: item.name || 'Unknown',
-          value: item.value || '',
-          package: item.package || '',
-          quantity: Number(item.quantity) || 0,
-          location: item.location || '',
-          min_stock: Number(item.min_stock) || 10
-        }
+        const quantityRaw = item.quantity === '' || item.quantity === undefined || item.quantity === null
+          ? 0
+          : Number(item.quantity)
+        const minStockRaw = item.min_stock === '' || item.min_stock === undefined || item.min_stock === null
+          ? 10
+          : Number(item.min_stock)
 
-        const exist = findStmt.get(safeItem.name, safeItem.value, safeItem.package) as any
+        const safeItem = {
+          category: String(item.category || 'Uncategorized').trim(),
+          name: String(item.name || '').trim(),
+          value: String(item.value || '').trim(),
+          package: String(item.package || '').trim(),
+          quantity: quantityRaw,
+          location: String(item.location || '').trim(),
+          min_stock: minStockRaw
+        }
+        this.validateInventoryItem(safeItem)
+
+        const exist = findStmt.get(
+          safeItem.category,
+          safeItem.name,
+          safeItem.value,
+          safeItem.package,
+          safeItem.location
+        ) as any
 
         if (exist) {
           if (mode === 'skip') {
             skipCount++
             continue
-          } 
-          else if (mode === 'merge') {
-            addQtyStmt.run(safeItem.quantity, exist.id)
-            successCount++
-          } 
-          else if (mode === 'overwrite') {
+          } else if (mode === 'overwrite') {
             updateStmt.run({ ...safeItem, id: exist.id })
+            successCount++
+          } else {
+            const baseName = safeItem.name || safeItem.value || 'Imported'
+            let suffix = 1
+            let candidate = `${baseName} (Imported)`
+            while (findStmt.get(
+              safeItem.category,
+              candidate,
+              safeItem.value,
+              safeItem.package,
+              safeItem.location
+            )) {
+              suffix++
+              candidate = `${baseName} (Imported ${suffix})`
+            }
+            insertStmt.run({ ...safeItem, name: candidate })
             successCount++
           }
         } else {
@@ -850,22 +1039,98 @@ class DBManager {
   }
 
   public getAppSettings(): AppSettings {
-    const defaultBackupPath = path.join(app.getPath('documents'), 'SiliconVault', 'Backups')
+    const defaultBackupPath = isDevelopmentStorageMode()
+      ? path.join(this.userDataPath, 'Backups')
+      : path.join(app.getPath('documents'), 'SiliconVault', 'Backups')
     
     return {
       autoBackup: this.getSetting('autoBackup', false),
       backupFrequency: this.getSetting('backupFrequency', 'exit'),
-      backupPath: this.getSetting('backupPath', defaultBackupPath),
+      backupPath: isDevelopmentStorageMode()
+        ? defaultBackupPath
+        : this.getSetting('backupPath', defaultBackupPath),
       maxBackups: this.getSetting('maxBackups', 5)
     }
   }
 
+  private cleanupOrphanProjectItems() {
+    this.db.prepare(`
+      DELETE FROM project_items
+      WHERE project_id NOT IN (SELECT id FROM projects)
+         OR inventory_id NOT IN (SELECT id FROM inventory)
+    `).run()
+  }
+
+  private assertPositiveInteger(value: unknown, field: string): asserts value is number {
+    if (!Number.isInteger(value) || (value as number) <= 0) {
+      throw new Error(`VALIDATION_ERROR:${field} must be a positive integer`)
+    }
+  }
+
+  private assertNonNegativeInteger(value: unknown, field: string): asserts value is number {
+    if (!Number.isInteger(value) || (value as number) < 0) {
+      throw new Error(`VALIDATION_ERROR:${field} must be a non-negative integer`)
+    }
+  }
+
+  private validateInventoryItem(data: InventoryItem) {
+    if (!data || typeof data !== 'object') {
+      throw new Error('VALIDATION_ERROR:inventory item is required')
+    }
+    if (data.id !== undefined) this.assertPositiveInteger(data.id, 'id')
+    this.assertNonNegativeInteger(data.quantity, 'quantity')
+    if (data.min_stock !== undefined && data.min_stock !== null) {
+      this.assertNonNegativeInteger(data.min_stock, 'min_stock')
+    }
+    if (!String(data.name || '').trim() && !String(data.value || '').trim()) {
+      throw new Error('VALIDATION_ERROR:inventory name or value is required')
+    }
+  }
+
+  private validateProject(project: BomProject) {
+    if (!project || typeof project !== 'object') {
+      throw new Error('VALIDATION_ERROR:project is required')
+    }
+    if (project.id !== undefined) this.assertPositiveInteger(project.id, 'project.id')
+    if (!String(project.name || '').trim()) {
+      throw new Error('VALIDATION_ERROR:project.name is required')
+    }
+
+    const items = project.items || []
+    if (!Array.isArray(items)) {
+      throw new Error('VALIDATION_ERROR:project.items must be an array')
+    }
+
+    const ids = new Set<number>()
+    for (const item of items) {
+      this.assertPositiveInteger(item.inventory_id, 'project.items.inventory_id')
+      this.assertPositiveInteger(item.quantity, 'project.items.quantity')
+      if (ids.has(item.inventory_id)) {
+        throw new Error(`VALIDATION_ERROR:duplicate inventory id ${item.inventory_id}`)
+      }
+      ids.add(item.inventory_id)
+    }
+
+    if (ids.size > 0) {
+      const placeholders = Array.from(ids).map(() => '?').join(',')
+      const rows = this.db.prepare(`SELECT id FROM inventory WHERE id IN (${placeholders})`)
+        .all(...ids) as { id: number }[]
+      if (rows.length !== ids.size) {
+        throw new Error('VALIDATION_ERROR:project contains missing inventory items')
+      }
+    }
+  }
+
   public saveAppSettings(settings: AppSettings) {
+    const safeSettings = isDevelopmentStorageMode()
+      ? { ...settings, backupPath: path.join(this.userDataPath, 'Backups') }
+      : settings
+
     const tx = this.db.transaction(() => {
-      this.setSetting('autoBackup', settings.autoBackup)
-      this.setSetting('backupFrequency', settings.backupFrequency)
-      this.setSetting('backupPath', settings.backupPath)
-      this.setSetting('maxBackups', settings.maxBackups)
+      this.setSetting('autoBackup', safeSettings.autoBackup)
+      this.setSetting('backupFrequency', safeSettings.backupFrequency)
+      this.setSetting('backupPath', safeSettings.backupPath)
+      this.setSetting('maxBackups', safeSettings.maxBackups)
     })
     tx()
   }

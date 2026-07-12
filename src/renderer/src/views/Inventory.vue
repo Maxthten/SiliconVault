@@ -183,24 +183,38 @@ const onDragStart = () => {
   if (navigator.vibrate) navigator.vibrate(30)
 }
 
+const persistInventoryOrder = async () => {
+  const ids = sortedGroups.value.flatMap(group => group.items.map(item => item.id))
+  await window.api.updateSortOrder('inventory', ids)
+}
+
 const onItemDragEnd = async (evt: any) => {
   isDragging.value = false
   if (evt.newIndex === evt.oldIndex) return
   try {
-    const allUpdatePromises = sortedGroups.value.map(group => {
-       const ids = group.items.map(i => i.id)
-       return window.api.updateSortOrder('inventory', ids)
-    })
-    await Promise.all(allUpdatePromises)
+    await persistInventoryOrder()
   } catch (e) { console.error(e) }
 }
-const onCategoryDragEnd = () => { isDragging.value = false }
+const onCategoryDragEnd = async (evt: any) => {
+  isDragging.value = false
+  if (evt.newIndex === evt.oldIndex) return
+  try {
+    await persistInventoryOrder()
+  } catch (e) { console.error(e) }
+}
 
 const handleQtyUpdate = async (item: any, delta: number) => {
   const newQty = item.quantity + delta
   if (delta < 0 && newQty < 0) return
+  const oldQty = item.quantity
   item.quantity = newQty
-  await window.api.updateQty(item.id, newQty)
+  try {
+    await window.api.updateQty(item.id, newQty)
+  } catch (err) {
+    item.quantity = oldQty
+    error('updateFailed')
+    console.error(err)
+  }
 }
 
 const handleDelete = (id: number) => {
@@ -216,15 +230,26 @@ const handleDelete = (id: number) => {
         loadData()
         loadOptions()
       } catch (e: any) {
-        if (e.message && e.message.includes('无法删除')) {
+        const messageText = String(e?.message || e)
+        const marker = 'INVENTORY_IN_USE:'
+        const markerIndex = messageText.indexOf(marker)
+        if (markerIndex >= 0) {
+          let projectNames: string[] = []
+          try {
+            projectNames = JSON.parse(messageText.slice(markerIndex + marker.length))
+          } catch {
+            projectNames = []
+          }
           dialog.error({
-            title: t('messages.warning.title'), 
-            content: e.message, 
+            title: t('messages.warning.title'),
+            content: t('inventory.deleteBlocked', {
+              projects: projectNames.length > 0 ? projectNames.join(', ') : t('inventory.relatedProjects')
+            }),
             positiveText: t('common.confirm')
           })
-        } else {
-          error('deleteFailed')
+          return
         }
+        error('deleteFailed')
       }
     }
   })

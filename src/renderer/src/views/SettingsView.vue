@@ -73,6 +73,7 @@ const APP_CONFIG = {
 
 const currentPath = ref('')
 const newPath = ref('')
+const isDevelopmentStorage = ref(false)
 const displayVersion = ref('Loading...')
 const isMigrating = ref(false)
 const showConfirm = ref(false)
@@ -105,6 +106,9 @@ const formatSize = (bytes: number) => {
 
 const init = async () => {
   try {
+    const environment = await window.api.getRuntimeEnvironment()
+    isDevelopmentStorage.value = environment.isDevelopment
+
     const path = await window.api.getStoragePath()
     currentPath.value = path
     newPath.value = path 
@@ -164,6 +168,7 @@ watch(backupSettings, async (newVal) => {
 }, { deep: true })
 
 const handleSelectBackupFolder = async () => {
+  if (isDevelopmentStorage.value) return
   const path = await window.api.selectFolder()
   if (path) {
     backupSettings.value.backupPath = path
@@ -180,6 +185,7 @@ const handleSponsor = async () => {
 }
 
 const handleSelectFolder = async () => {
+  if (isDevelopmentStorage.value) return
   const path = await window.api.selectFolder()
   if (path) {
     newPath.value = path
@@ -187,6 +193,7 @@ const handleSelectFolder = async () => {
 }
 
 const preCheckMigration = () => {
+  if (isDevelopmentStorage.value) return
   if (newPath.value === currentPath.value) {
     message.warning(t('settings.messages.opFailed'))
     return
@@ -311,13 +318,22 @@ onMounted(init)
           <span class="dot yellow"></span>
           <span class="dot green"></span>
           <span class="path-label">{{ t('settings.storage.currentLocation') }}</span>
+          <span v-if="isDevelopmentStorage" class="environment-badge">
+            {{ t('settings.storage.developmentEnvironment') }}
+          </span>
         </div>
         <div class="path-body">
           {{ currentPath }}
         </div>
         <div class="path-footer">
           <n-icon :component="InformationCircleOutline" />
-          <span>{{ t('settings.storage.locationDesc') }}</span>
+          <span>
+            {{
+              isDevelopmentStorage
+                ? t('settings.storage.developmentLocked')
+                : t('settings.storage.locationDesc')
+            }}
+          </span>
         </div>
       </div>
 
@@ -331,13 +347,22 @@ onMounted(init)
             class="path-input"
             size="large"
           />
-          <n-button type="primary" secondary size="large" @click="handleSelectFolder">
+          <n-button
+            type="primary"
+            secondary
+            size="large"
+            :disabled="isDevelopmentStorage"
+            @click="handleSelectFolder"
+          >
             <template #icon><n-icon :component="FolderOpenOutline" /></template>
             {{ t('common.browse') }}
           </n-button>
         </n-input-group>
 
-        <div class="migrate-btn-wrapper" :class="{ 'visible': newPath !== currentPath }">
+        <div
+          class="migrate-btn-wrapper"
+          :class="{ 'visible': !isDevelopmentStorage && newPath !== currentPath }"
+        >
           <n-button 
             type="warning" 
             size="large"
@@ -405,7 +430,10 @@ onMounted(init)
                     readonly 
                     :placeholder="t('settings.storage.defaultPath')" 
                   />
-                  <n-button @click="handleSelectBackupFolder">
+                  <n-button
+                    :disabled="isDevelopmentStorage"
+                    @click="handleSelectBackupFolder"
+                  >
                     <template #icon><n-icon :component="FolderOpenOutline" /></template>
                   </n-button>
                 </n-input-group>
@@ -635,6 +663,18 @@ onMounted(init)
 .yellow { background: #ffbd2e; }
 .green { background: #27c93f; }
 .path-label { margin-left: 10px; font-size: 12px; color: var(--text-tertiary); font-family: monospace; }
+.environment-badge {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 159, 10, 0.38);
+  border-radius: 999px;
+  background: rgba(255, 159, 10, 0.12);
+  color: #ff9f0a;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
 .path-body {
   padding: 20px;
   font-family: 'JetBrains Mono', monospace;

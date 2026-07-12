@@ -32,6 +32,7 @@ const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 const displayText = ref('')
 const currentIndex = ref(Math.floor(Math.random() * geekQuotes.length))
 const isTyping = ref(false)
+const isDevelopment = ref(false)
 
 let typeTimer: NodeJS.Timeout | null = null
 let autoSwitchTimer: NodeJS.Timeout | null = null
@@ -87,6 +88,13 @@ const handleClick = () => {
 
 onMounted(() => {
   startTypewriter()
+  window.api.getRuntimeEnvironment()
+    .then((environment) => {
+      isDevelopment.value = environment.isDevelopment
+    })
+    .catch((error) => {
+      console.error('Failed to load runtime environment:', error)
+    })
 })
 
 onUnmounted(() => {
@@ -101,6 +109,7 @@ onUnmounted(() => {
     <div class="left-area">
       <img src="@renderer/assets/logo.png" class="app-logo" alt="logo" />
       <span class="app-name">SiliconVault</span>
+      <span v-if="isDevelopment" class="dev-badge">DEV</span>
     </div>
 
     <div 
@@ -173,6 +182,18 @@ onUnmounted(() => {
   font-weight: 600;
   font-family: system-ui, -apple-system, sans-serif;
   color: var(--text-primary);
+}
+
+.dev-badge {
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 159, 10, 0.42);
+  border-radius: 999px;
+  background: rgba(255, 159, 10, 0.12);
+  color: #ff9f0a;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 /* --- 中间语录区 --- */

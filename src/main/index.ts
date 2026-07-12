@@ -9,8 +9,13 @@ import fs from 'fs'
 import Store from 'electron-store'
 import { pathToFileURL } from 'url' 
 import { analyticsManager } from './analytics'
+import {
+  getRuntimeEnvironment,
+  isDevelopmentStorageMode,
+  isDevelopmentStoragePath
+} from './environment'
 
-const store = new Store()
+const productionStore = isDevelopmentStorageMode() ? null : new Store()
 
 let isDataDirty = false
 let backupTimer: NodeJS.Timeout | null = null
@@ -144,6 +149,11 @@ app.whenReady().then(() => {
     dbManager.updateQty(id, qty)
     markDataDirty()
   })
+
+  ipcMain.handle('batch-update-qty', (_, updates) => {
+    dbManager.batchUpdateQty(updates)
+    markDataDirty()
+  })
   
   ipcMain.handle('delete-item', (_, id) => {
     dbManager.deleteItem(id)
@@ -250,6 +260,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('get-storage-path', () => dbManager.getStoragePath())
+  ipcMain.handle('get-runtime-environment', () => getRuntimeEnvironment())
   ipcMain.handle('open-data-folder', () => { shell.openPath(dbManager.getStoragePath()) })
   
   ipcMain.handle('open-file', (_, relativePath) => {
@@ -325,10 +336,20 @@ app.whenReady().then(() => {
 
   ipcMain.handle('update-storage-path', async (_, newPath) => {
     try {
+      if (isDevelopmentStorageMode()) {
+        throw new Error('Development storage is locked and cannot be migrated')
+      }
+      if (!productionStore) {
+        throw new Error('Production configuration store is unavailable')
+      }
+      if (isDevelopmentStoragePath(newPath)) {
+        throw new Error('Development storage cannot be selected by a production build')
+      }
+
       const oldPath = dbManager.getStoragePath()
       if (oldPath === newPath) return true
       fs.cpSync(oldPath, newPath, { recursive: true, force: false })
-      store.set('storagePath', newPath)
+      productionStore.set('storagePath', newPath)
       app.relaunch()
       app.exit()
       return true
