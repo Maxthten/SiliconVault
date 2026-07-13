@@ -19,7 +19,7 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
-    "postinstall": "electron-builder install-app-deps --config electron-builder.yml",
+    "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --config electron-builder.yml --dir",
     "build:win": "npm run build && electron-builder --config electron-builder.yml --win",
     "build:mac": "npm run build && electron-builder --config electron-builder.yml --mac",
