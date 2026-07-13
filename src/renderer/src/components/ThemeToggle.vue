@@ -21,15 +21,21 @@ import { inject } from 'vue'
 // 注入全局主题状态
 const isDark = inject('isDark')
 // 修改类型定义：必须接收 MouseEvent，用于计算扩散圆心
-const toggleTheme = inject('toggleTheme') as (event: MouseEvent) => void
+const toggleTheme = inject('toggleTheme') as (event?: MouseEvent) => void
 
+const handleKeyboardToggle = (): void => toggleTheme()
 </script>
 
 <template>
   <div 
     class="sky-window" 
     :class="{ 'dark': isDark }" 
+    role="button"
+    tabindex="0"
+    :aria-label="isDark ? '切换到亮色模式 / Light mode' : '切换到暗色模式 / Dark mode'"
     @click="toggleTheme"
+    @keydown.enter.prevent="handleKeyboardToggle"
+    @keydown.space.prevent="handleKeyboardToggle"
   >
     <div class="sky-container">
       

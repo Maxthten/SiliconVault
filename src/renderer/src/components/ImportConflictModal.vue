@@ -27,6 +27,7 @@ import {
   ImageOutline
 } from '@vicons/ionicons5'
 import { useI18n } from '../utils/i18n' // 引入国际化
+import { loadCategoryRules } from '../utils/category-rules'
 
 import type { ScanResult, ImportStrategy } from '../../../preload/index'
 
@@ -72,15 +73,7 @@ const currentBatchMode = computed(() => {
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
@@ -448,13 +441,18 @@ const handleConfirm = async () => {
 <style scoped>
 /* 样式保持不变，此处省略以节省篇幅 */
 .conflict-modal {
-  width: 900px;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   background-color: var(--bg-modal); 
   border-radius: 16px;
   overflow: hidden;
 }
 
-:deep(.n-card__content) { padding: 0 !important; }
+:deep(.n-card__content) {
+  padding: 0 !important;
+  overflow-y: auto;
+  min-height: 0;
+}
 
 .modal-header {
   padding: 20px 24px;
@@ -544,4 +542,44 @@ const handleConfirm = async () => {
 }
 .footer-tip { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
 .footer-btns { display: flex; gap: 12px; }
+
+@media (max-width: 760px), (max-height: 680px) {
+  .conflict-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .conflict-row {
+    flex-direction: column;
+  }
+
+  .decision-area {
+    width: auto;
+    padding: 0 12px 12px;
+  }
+
+  .arrow-icon {
+    transform: rotate(90deg);
+  }
+
+  .radio-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .modal-footer {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .footer-btns {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 520px) {
+  .radio-group { grid-template-columns: 1fr; }
+  .batch-bar { align-items: stretch; flex-direction: column; }
+}
 </style>

@@ -1,6 +1,9 @@
 import { resolve } from 'path'
+import { fileURLToPath } from 'url'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
   main: {
@@ -15,9 +18,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
+    root: resolve(projectRoot, 'src/renderer'),
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
+        '@renderer': resolve(projectRoot, 'src/renderer/src')
       }
     },
     plugins: [vue()],

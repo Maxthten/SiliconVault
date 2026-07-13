@@ -20,47 +20,62 @@ import AdmZip from 'adm-zip'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { dbManager } from './db'
+import { dbManager, type DBManager } from './db'
 import { randomUUID, createHash } from 'crypto'
+import {
+  assertSafeAbsoluteDirectory,
+  isPathInside,
+  normalizeRelativePath,
+  resolveCanonicalPath,
+  resolveExistingFileWithin,
+  resolvePathWithin,
+  sanitizePathSegment
+} from './path-security'
+import type {
+  BundleInventoryItem,
+  BundleProject,
+  BundleScanResult,
+  BusinessBundleMeta,
+  ExportBundleOptions,
+  ExportBundleResult,
+  ImportStrategies,
+  InventoryItem,
+  ProjectItemLink
+} from '../shared/types'
 
-interface ExportOptions {
-  type: 'all' | 'custom'
-  projectIds?: number[]
-  inventoryIds?: number[]
-}
+const BUSINESS_BUNDLE_FORMAT = 'siliconvault-business-bundle'
+const BUSINESS_BUNDLE_VERSION = '3.0'
+const LEGACY_BUNDLE_VERSION = '2.0'
+const FULL_BACKUP_FORMAT = 'siliconvault-full-backup'
+const FULL_BACKUP_VERSION = '1.0'
+const MAX_BUNDLE_SIZE = 2 * 1024 * 1024 * 1024
+const MAX_ENTRY_SIZE = 512 * 1024 * 1024
+const MAX_ENTRY_COUNT = 20_000
+const MAX_META_SIZE = 128 * 1024 * 1024
+const TEMP_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
-interface BackupMeta {
-  version: string
+interface FullBackupManifest {
+  format: typeof FULL_BACKUP_FORMAT
+  kind: 'full-application-backup'
+  version: typeof FULL_BACKUP_VERSION
   createdAt: number
-  inventory: any[]
-  projects: any[]
-  projectItems: any[]
+  database: string
+  assetsRoot: string
 }
 
-type ImportStrategies = Record<number, 'skip' | 'overwrite' | 'keep_both'>
-
-interface ConflictItem {
-  local: any
-  remote: any
-  hasFileDiff: boolean
+interface TempSession {
+  extractRoot: string
+  workingDir: string
+  createdAt: number
 }
 
-interface ScanResult {
-  scanId: string
-  meta: BackupMeta
-  conflicts: {
-    inventory: ConflictItem[]
-    projects: ConflictItem[]
+export class BackupManager {
+
+  private tempSessions = new Map<string, TempSession>()
+
+  constructor(private readonly databaseManager: DBManager = dbManager) {
+    this.cleanupExpiredImportDirectories()
   }
-  newItems: {
-    inventory: number
-    projects: number
-  }
-}
-
-class BackupManager {
-  
-  private tempSessions = new Map<string, string>()
 
   private calculateFileHash(filePath: string): string {
     try {
@@ -69,25 +84,37 @@ class BackupManager {
       const hashSum = createHash('md5')
       hashSum.update(fileBuffer)
       return hashSum.digest('hex')
-    } catch (e) {
+    } catch {
       return ''
     }
   }
 
+  public validateBackupDirectory(targetDir: string): string {
+    const safeTargetDir = assertSafeAbsoluteDirectory(targetDir)
+    const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
+    const canonicalAssetsRoot = resolveCanonicalPath(assetsRoot)
+    const canonicalTargetDir = resolveCanonicalPath(safeTargetDir)
+    if (isPathInside(canonicalAssetsRoot, canonicalTargetDir)) {
+      throw new Error('BACKUP_PATH_INSIDE_ASSETS')
+    }
+    return safeTargetDir
+  }
+
   public async createAutoBackup(targetDir: string): Promise<boolean> {
     try {
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true })
+      const safeTargetDir = this.validateBackupDirectory(targetDir)
+      if (!fs.existsSync(safeTargetDir)) {
+        fs.mkdirSync(safeTargetDir, { recursive: true })
       }
 
       const now = new Date()
-      const formatNum = (n: number) => n.toString().padStart(2, '0')
+      const formatNum = (n: number): string => n.toString().padStart(2, '0')
       const timestamp = `${now.getFullYear()}${formatNum(now.getMonth() + 1)}${formatNum(now.getDate())}_${formatNum(now.getHours())}${formatNum(now.getMinutes())}${formatNum(now.getSeconds())}`
       
-      const fileName = `AutoBackup_${timestamp}.svdata`
-      const filePath = path.join(targetDir, fileName)
+      const fileName = `AutoBackup_${timestamp}.svbackup`
+      const filePath = path.join(safeTargetDir, fileName)
 
-      await this.exportBundle(filePath, { type: 'all' })
+      await this.createFullBackup(filePath)
       
       return true
     } catch (e) {
@@ -96,16 +123,17 @@ class BackupManager {
     }
   }
 
-  public async cleanOldBackups(targetDir: string, maxBackups: number) {
-    if (!fs.existsSync(targetDir) || maxBackups <= 0) return
+  public async cleanOldBackups(targetDir: string, maxBackups: number): Promise<void> {
+    const safeTargetDir = assertSafeAbsoluteDirectory(targetDir)
+    if (!fs.existsSync(safeTargetDir) || maxBackups <= 0) return
 
     try {
-      const files = fs.readdirSync(targetDir)
+      const files = fs.readdirSync(safeTargetDir)
       
       const backupFiles = files
-        .filter(f => /^AutoBackup_\d{8}_\d{6}\.svdata$/.test(f))
+        .filter(f => /^AutoBackup_\d{8}_\d{6}\.(svbackup|svdata)$/.test(f))
         .map(f => {
-          const fullPath = path.join(targetDir, f)
+          const fullPath = path.join(safeTargetDir, f)
           try {
             return {
               name: f,
@@ -125,11 +153,6 @@ class BackupManager {
         
         for (const file of filesToDelete) {
           fs.unlinkSync(file.path)
-          
-          const csvPath = file.path.replace(/\.svdata$/, '.csv')
-          if (fs.existsSync(csvPath)) {
-            fs.unlinkSync(csvPath)
-          }
         }
         
         console.log(`Cleaned ${filesToDelete.length} old backups`)
@@ -140,33 +163,86 @@ class BackupManager {
     }
   }
 
-  public async exportBundle(filePath: string, options: ExportOptions) {
+  public async createFullBackup(
+    filePath: string
+  ): Promise<{ success: true; type: 'full-application-backup' }> {
+    const resolvedFilePath = path.resolve(filePath)
+    if (path.extname(resolvedFilePath).toLowerCase() !== '.svbackup') {
+      throw new Error('INVALID_FULL_BACKUP_EXTENSION')
+    }
+    const safeTargetDir = this.validateBackupDirectory(path.dirname(resolvedFilePath))
+    const safeFilePath = path.join(safeTargetDir, path.basename(resolvedFilePath))
+    const backupStage = fs.mkdtempSync(path.join(os.tmpdir(), 'siliconvault_full_backup_'))
+    const databaseSnapshot = path.join(backupStage, 'inventory.db')
+
+    try {
+      fs.mkdirSync(safeTargetDir, { recursive: true })
+      await this.databaseManager.getDb().backup(databaseSnapshot)
+
+      const zip = new AdmZip()
+      const manifest: FullBackupManifest = {
+        format: FULL_BACKUP_FORMAT,
+        kind: 'full-application-backup',
+        version: FULL_BACKUP_VERSION,
+        createdAt: Date.now(),
+        database: 'database/inventory.db',
+        assetsRoot: 'assets/'
+      }
+      zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'))
+      zip.addLocalFile(databaseSnapshot, 'database')
+
+      const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
+      this.addDirectoryFilesToZip(zip, assetsRoot, 'assets')
+      this.writeZipAtomically(zip, safeFilePath)
+
+      this.databaseManager.addLog({
+        op_type: 'EXPORT',
+        target_type: 'SYSTEM',
+        target_id: 0,
+        event_code: 'FULL_BACKUP_CREATE',
+        summary_key: 'log.backup.fullBackup',
+        summary_params: JSON.stringify({ file: path.basename(safeFilePath) }),
+        undoable: 0
+      })
+      return { success: true, type: 'full-application-backup' as const }
+    } finally {
+      fs.rmSync(backupStage, { recursive: true, force: true })
+    }
+  }
+
+  public async exportBundle(
+    filePath: string,
+    options: ExportBundleOptions
+  ): Promise<ExportBundleResult> {
     try {
       const zip = new AdmZip()
-      const assetsRoot = path.join(dbManager.getStoragePath(), 'assets')
-      const db = dbManager.getDb()
+      const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
+      const db = this.databaseManager.getDb()
       
-      let inventoryList: any[] = []
-      let projectList: any[] = []
-      let projectItemsList: any[] = []
+      let inventoryList: BundleInventoryItem[] = []
+      let projectList: BundleProject[] = []
+      let projectItemsList: ProjectItemLink[] = []
 
       if (options.type === 'all') {
-        inventoryList = dbManager.getAllInventoryForExport()
-        const allProjs = dbManager.getAllProjectsForExport()
+        inventoryList = this.databaseManager.getAllInventoryForExport()
+        const allProjs = this.databaseManager.getAllProjectsForExport()
         projectList = allProjs.map(p => {
           const { id, name, description, created_at, order_index, files } = p
           return { id, name, description, created_at, order_index, files }
         })
-        projectItemsList = db.prepare("SELECT * FROM project_items").all() as any[]
+        projectItemsList = db.prepare('SELECT * FROM project_items').all() as ProjectItemLink[]
       } else {
         const targetInventoryIds = new Set(options.inventoryIds || [])
         
         if (options.projectIds && options.projectIds.length > 0) {
           for (const pid of options.projectIds) {
-            const proj = db.prepare("SELECT * FROM projects WHERE id = ?").get(pid) as any
+            if (!Number.isInteger(pid) || pid <= 0) throw new Error('INVALID_EXPORT_SELECTION')
+            const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(pid) as BundleProject | undefined
             if (proj) projectList.push(proj)
 
-            const items = db.prepare("SELECT * FROM project_items WHERE project_id = ?").all(pid) as any[]
+            const items = db.prepare(
+              'SELECT * FROM project_items WHERE project_id = ?'
+            ).all(pid) as ProjectItemLink[]
             projectItemsList.push(...items)
 
             items.forEach(item => targetInventoryIds.add(item.inventory_id))
@@ -174,30 +250,40 @@ class BackupManager {
         }
 
         if (targetInventoryIds.size > 0) {
-          const ids = Array.from(targetInventoryIds).join(',')
-          inventoryList = db.prepare(`SELECT * FROM inventory WHERE id IN (${ids})`).all() as any[]
+          const ids = Array.from(targetInventoryIds)
+          if (ids.some(id => !Number.isInteger(id) || id <= 0)) {
+            throw new Error('INVALID_EXPORT_SELECTION')
+          }
+          const placeholders = ids.map(() => '?').join(',')
+          inventoryList = db.prepare(`SELECT * FROM inventory WHERE id IN (${placeholders})`)
+            .all(...ids) as BundleInventoryItem[]
         }
       }
 
       const packedFiles = new Set<string>()
 
-      const addFileToZip = (rawPaths: string) => {
+      const addFileToZip = (rawPaths?: string): void => {
         if (!rawPaths) return
         try {
           const paths = JSON.parse(rawPaths)
           if (Array.isArray(paths)) {
             for (const relativePath of paths) {
-              if (packedFiles.has(relativePath)) continue 
+              const normalizedPath = normalizeRelativePath(relativePath)
+              if (packedFiles.has(normalizedPath)) continue
 
-              const fullPath = path.join(assetsRoot, relativePath)
-              if (fs.existsSync(fullPath)) {
-                const zipPath = path.join('assets', path.dirname(relativePath)).replace(/\\/g, '/')
+              try {
+                const fullPath = resolveExistingFileWithin(assetsRoot, normalizedPath)
+                const zipPath = path.posix.join('assets', path.posix.dirname(normalizedPath))
                 zip.addLocalFile(fullPath, zipPath)
-                packedFiles.add(relativePath)
+                packedFiles.add(normalizedPath)
+              } catch {
+                console.warn(`Skipping missing or unsafe asset during export: ${normalizedPath}`)
               }
             }
           }
-        } catch (e) { }
+        } catch (e) {
+          console.warn('Skipping invalid asset path list during export', e)
+        }
       }
 
       inventoryList.forEach(item => {
@@ -209,8 +295,10 @@ class BackupManager {
         addFileToZip(proj.files)
       })
 
-      const meta: BackupMeta = {
-        version: '2.0',
+      const meta: BusinessBundleMeta = {
+        format: BUSINESS_BUNDLE_FORMAT,
+        kind: 'business-bundle',
+        version: BUSINESS_BUNDLE_VERSION,
         createdAt: Date.now(),
         inventory: inventoryList,
         projects: projectList,
@@ -218,7 +306,7 @@ class BackupManager {
       }
 
       zip.addFile("meta.json", Buffer.from(JSON.stringify(meta, null, 2), "utf8"))
-      zip.writeZip(filePath)
+      this.writeZipAtomically(zip, filePath)
 
       try {
         const csvContent = this.generateCsv(inventoryList)
@@ -228,18 +316,18 @@ class BackupManager {
         console.error('CSV generation failed', e)
       }
 
-      dbManager.addLog({
+      this.databaseManager.addLog({
         op_type: 'EXPORT',
-        target_type: 'PROJECT', 
+        target_type: 'SYSTEM',
         target_id: 0,
-        desc: JSON.stringify({
-          key: 'log.backup.export',
-          params: { 
-            file: path.basename(filePath), 
-            inv: inventoryList.length, 
-            proj: projectList.length 
-          }
-        })
+        event_code: 'BUNDLE_EXPORT',
+        summary_key: 'log.backup.export',
+        summary_params: JSON.stringify({
+          file: path.basename(filePath),
+          inv: inventoryList.length,
+          proj: projectList.length
+        }),
+        undoable: 0
       })
 
       return { 
@@ -253,19 +341,25 @@ class BackupManager {
     }
   }
 
-  public async scanBundle(filePath: string): Promise<ScanResult> {
+  public async scanBundle(filePath: string): Promise<BundleScanResult> {
+    this.cleanupExpiredImportDirectories()
     const scanId = randomUUID()
-    const extractDir = path.join(os.tmpdir(), 'siliconvault_import', scanId)
-    const db = dbManager.getDb()
-    const assetsRoot = path.join(dbManager.getStoragePath(), 'assets')
+    const importTempRoot = path.join(os.tmpdir(), 'siliconvault_import')
+    fs.mkdirSync(importTempRoot, { recursive: true })
+    const extractDir = path.join(importTempRoot, scanId)
+    const db = this.databaseManager.getDb()
+    const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
 
     try {
-      if (!fs.existsSync(extractDir)) fs.mkdirSync(extractDir, { recursive: true })
-      
+      const sourceStat = fs.statSync(filePath)
+      if (!sourceStat.isFile() || sourceStat.size <= 0 || sourceStat.size > MAX_BUNDLE_SIZE) {
+        throw new Error('INVALID_BUNDLE_SIZE')
+      }
+      fs.mkdirSync(extractDir, { recursive: true })
+
       const fileBuffer = fs.readFileSync(filePath)
       const zip = new AdmZip(fileBuffer)
-      
-      zip.extractAllTo(extractDir, true)
+      this.extractBundleSafely(zip, extractDir)
 
       let workingDir = extractDir
       const rootMetaPath = path.join(extractDir, 'meta.json')
@@ -288,15 +382,17 @@ class BackupManager {
         }
       }
 
-      this.tempSessions.set(scanId, workingDir)
-
       const metaPath = path.join(workingDir, 'meta.json')
       if (!fs.existsSync(metaPath)) throw new Error('Invalid bundle: missing meta.json')
       
-      const metaData = fs.readFileSync(metaPath, 'utf-8')
-      const meta: BackupMeta = JSON.parse(metaData)
+      const meta = this.readBusinessBundleMeta(metaPath)
+      this.tempSessions.set(scanId, {
+        extractRoot: extractDir,
+        workingDir,
+        createdAt: Date.now()
+      })
 
-      const checkFilesDiff = (localJson: string, remoteJson: string): boolean => {
+      const checkFilesDiff = (localJson?: string, remoteJson?: string): boolean => {
         try {
           const localPaths = JSON.parse(localJson || '[]')
           const remotePaths = JSON.parse(remoteJson || '[]')
@@ -307,15 +403,24 @@ class BackupManager {
           
           const localHashes = new Set<string>()
           for (const lp of localPaths) {
-             const lpFull = path.join(assetsRoot, lp)
-             localHashes.add(this.calculateFileHash(lpFull))
+             try {
+               const lpFull = resolveExistingFileWithin(assetsRoot, lp)
+               localHashes.add(this.calculateFileHash(lpFull))
+             } catch {
+               localHashes.add('')
+             }
           }
 
           for (const rp of remotePaths) {
-            const normalizedRelPath = rp.replace(/\\/g, '/')
+            const normalizedRelPath = normalizeRelativePath(rp)
             const fileNameOnly = path.basename(normalizedRelPath)
-            let srcFile = path.join(workingDir, 'assets', normalizedRelPath)
-            if (!fs.existsSync(srcFile)) srcFile = path.join(workingDir, 'assets', fileNameOnly)
+            const bundleAssetsRoot = path.join(workingDir, 'assets')
+            let srcFile: string
+            try {
+              srcFile = resolveExistingFileWithin(bundleAssetsRoot, normalizedRelPath)
+            } catch {
+              srcFile = resolveExistingFileWithin(bundleAssetsRoot, fileNameOnly)
+            }
             
             const remoteHash = this.calculateFileHash(srcFile)
             
@@ -323,17 +428,23 @@ class BackupManager {
           }
           
           return false
-        } catch (e) { return false }
+        } catch {
+          return false
+        }
       }
 
-      const conflictInventory: ConflictItem[] = []
+      const conflictInventory: BundleScanResult['conflicts']['inventory'] = []
       let newInventoryCount = 0
 
       for (const remoteItem of meta.inventory) {
         const local = db.prepare(`
           SELECT * FROM inventory 
           WHERE name = ? AND package = ? AND value = ?
-        `).get(remoteItem.name, remoteItem.package, remoteItem.value) as any
+        `).get(
+          remoteItem.name,
+          remoteItem.package,
+          remoteItem.value
+        ) as BundleInventoryItem | undefined
 
         if (local) {
           const hasImageDiff = checkFilesDiff(local.image_paths, remoteItem.image_paths)
@@ -349,13 +460,13 @@ class BackupManager {
         }
       }
 
-      const conflictProjects: ConflictItem[] = []
+      const conflictProjects: BundleScanResult['conflicts']['projects'] = []
       let newProjectCount = 0
 
       for (const remoteProj of meta.projects) {
         const local = db.prepare(`
           SELECT * FROM projects WHERE name = ?
-        `).get(remoteProj.name) as any
+        `).get(remoteProj.name) as BundleProject | undefined
 
         if (local) {
           const hasFileDiff = checkFilesDiff(local.files, remoteProj.files)
@@ -383,68 +494,98 @@ class BackupManager {
       }
 
     } catch (e) {
-      console.error('Scan failed:', e)
+      const message = e instanceof Error ? e.message : String(e)
+      if (!/^(INVALID_|UNSUPPORTED_|BUNDLE_)/.test(message)) {
+        console.error('Scan failed:', e)
+      }
       this.cleanupTemp(scanId)
+      if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true })
       throw e
     }
   }
 
-  public async executeImport(scanId: string, strategies: { inventory: ImportStrategies, projects: ImportStrategies }) {
-    const workingDir = this.tempSessions.get(scanId)
-    if (!workingDir || !fs.existsSync(workingDir)) throw new Error('Session expired')
+  public async executeImport(
+    scanId: string,
+    strategies: ImportStrategies
+  ): Promise<{ success: true }> {
+    const session = this.tempSessions.get(scanId)
+    if (
+      !session ||
+      Date.now() - session.createdAt > TEMP_SESSION_MAX_AGE_MS ||
+      !fs.existsSync(session.workingDir)
+    ) {
+      this.cleanupTemp(scanId)
+      throw new Error('Session expired')
+    }
+    const workingDir = session.workingDir
 
-    const db = dbManager.getDb()
-    const assetsRoot = path.join(dbManager.getStoragePath(), 'assets')
+    const db = this.databaseManager.getDb()
+    const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
+    fs.mkdirSync(assetsRoot, { recursive: true })
+    const stagingRoot = path.join(this.databaseManager.getStoragePath(), '.staging', 'imports', scanId)
+    const stagingAssetsRoot = path.join(stagingRoot, 'assets')
+    fs.mkdirSync(stagingAssetsRoot, { recursive: true })
     
     const inventoryIdMap = new Map<number, number>()
     const projectIdMap = new Map<number, number>()
+    const stagedFiles = new Map<string, { stagedPath: string; finalPath: string; relativePath: string }>()
+    const committedFiles: string[] = []
 
     try {
-      const meta: BackupMeta = JSON.parse(fs.readFileSync(path.join(workingDir, 'meta.json'), 'utf-8'))
+      this.validateImportStrategies(strategies)
+      const meta = this.readBusinessBundleMeta(path.join(workingDir, 'meta.json'))
 
-      const importFiles = (rawPaths: string): string => {
+      const stageImportFiles = (rawPaths?: string): string => {
         if (!rawPaths) return JSON.stringify([])
-        try {
-          const paths = JSON.parse(rawPaths)
-          if (!Array.isArray(paths)) return JSON.stringify([])
+        const paths = JSON.parse(rawPaths)
+        if (!Array.isArray(paths)) throw new Error('INVALID_BUNDLE_ASSET_LIST')
 
-          const newPaths: string[] = []
-          for (const relPath of paths) {
-            const normalizedRelPath = relPath.replace(/\\/g, '/')
-            const fileNameOnly = path.basename(normalizedRelPath)
-            
-            let srcFile = path.join(workingDir, 'assets', normalizedRelPath)
-            if (!fs.existsSync(srcFile)) {
-                srcFile = path.join(workingDir, 'assets', fileNameOnly)
-            }
-            
-            if (fs.existsSync(srcFile)) {
-              let targetFileName = fileNameOnly
-              let destFile = path.join(assetsRoot, targetFileName)
-
-              if (fs.existsSync(destFile)) {
-                 const srcHash = this.calculateFileHash(srcFile)
-                 const localHash = this.calculateFileHash(destFile)
-
-                 if (srcHash && localHash && srcHash === localHash) {
-                    newPaths.push(targetFileName)
-                    continue 
-                 } else {
-                    const ext = path.extname(fileNameOnly)
-                    const name = path.basename(fileNameOnly, ext)
-                    targetFileName = `${Date.now()}_${Math.floor(Math.random()*1000)}_${name}${ext}`
-                    destFile = path.join(assetsRoot, targetFileName)
-                 }
-              }
-
-              fs.copyFileSync(srcFile, destFile)
-              newPaths.push(targetFileName)
+        const newPaths: string[] = []
+        const bundleAssetsRoot = path.join(workingDir, 'assets')
+        for (const relPath of paths) {
+          const normalizedRelPath = normalizeRelativePath(relPath)
+          const fileNameOnly = path.basename(normalizedRelPath)
+          let srcFile: string
+          try {
+            srcFile = resolveExistingFileWithin(bundleAssetsRoot, normalizedRelPath)
+          } catch {
+            try {
+              srcFile = resolveExistingFileWithin(bundleAssetsRoot, fileNameOnly)
+            } catch {
+              console.warn(`Skipping missing bundle attachment: ${normalizedRelPath}`)
+              continue
             }
           }
-          return JSON.stringify(newPaths)
-        } catch (e) { 
-          console.error('Import file error:', e)
-          return JSON.stringify([]) 
+
+          const existingStage = stagedFiles.get(srcFile)
+          if (existingStage) {
+            newPaths.push(existingStage.relativePath)
+            continue
+          }
+
+          const safeFileName = sanitizePathSegment(fileNameOnly, 'attachment')
+          const finalRelativePath = normalizeRelativePath(
+            `imports/${scanId.slice(0, 8)}/${randomUUID()}_${safeFileName}`
+          )
+          const stagedPath = resolvePathWithin(stagingAssetsRoot, finalRelativePath)
+          const finalPath = resolvePathWithin(assetsRoot, finalRelativePath)
+          fs.mkdirSync(path.dirname(stagedPath), { recursive: true })
+          fs.copyFileSync(srcFile, stagedPath, fs.constants.COPYFILE_EXCL)
+          stagedFiles.set(srcFile, {
+            stagedPath,
+            finalPath,
+            relativePath: finalRelativePath
+          })
+          newPaths.push(finalRelativePath)
+        }
+        return JSON.stringify(newPaths)
+      }
+
+      const commitStagedFiles = (): void => {
+        for (const file of stagedFiles.values()) {
+          fs.mkdirSync(path.dirname(file.finalPath), { recursive: true })
+          fs.renameSync(file.stagedPath, file.finalPath)
+          committedFiles.push(file.finalPath)
         }
       }
 
@@ -453,15 +594,17 @@ class BackupManager {
         for (const item of meta.inventory) {
           const strategy = strategies.inventory[item.id] || 'keep_both'
           
-          const existing = db.prepare(`SELECT id FROM inventory WHERE name = ? AND package = ? AND value = ?`).get(item.name, item.package, item.value) as any
+            const existing = db.prepare(
+              'SELECT id FROM inventory WHERE name = ? AND package = ? AND value = ?'
+            ).get(item.name, item.package, item.value) as { id: number } | undefined
 
           if (existing && strategy === 'skip') {
             inventoryIdMap.set(item.id, existing.id)
             continue
           }
 
-          const newImages = importFiles(item.image_paths)
-          const newDatasheets = importFiles(item.datasheet_paths)
+          const newImages = stageImportFiles(item.image_paths)
+          const newDatasheets = stageImportFiles(item.datasheet_paths)
 
           if (existing && strategy === 'overwrite') {
             db.prepare(`
@@ -497,14 +640,16 @@ class BackupManager {
 
         for (const proj of meta.projects) {
           const strategy = strategies.projects[proj.id] || 'keep_both'
-          const existing = db.prepare(`SELECT id FROM projects WHERE name = ?`).get(proj.name) as any
+          const existing = db.prepare(
+            'SELECT id FROM projects WHERE name = ?'
+          ).get(proj.name) as { id: number } | undefined
 
           if (existing && strategy === 'skip') {
             projectIdMap.set(proj.id, existing.id)
             continue
           }
 
-          const newFiles = importFiles(proj.files)
+          const newFiles = stageImportFiles(proj.files)
 
           if (existing && strategy === 'overwrite') {
             db.prepare(`
@@ -545,42 +690,54 @@ class BackupManager {
             }
           }
         }
+
+        commitStagedFiles()
       })
 
       transaction()
 
       const invCount = meta.inventory.length
       const projCount = meta.projects.length
-      dbManager.addLog({
+      this.databaseManager.addLog({
         op_type: 'IMPORT',
-        target_type: 'INVENTORY', 
+        target_type: 'SYSTEM',
         target_id: 0,
-        desc: JSON.stringify({
-          key: 'log.backup.import',
-          params: { 
-            session: scanId.substring(0, 8), 
-            inv: invCount, 
-            proj: projCount 
-          }
-        })
+        event_code: 'BUNDLE_IMPORT',
+        summary_key: 'log.backup.import',
+        summary_params: JSON.stringify({
+          session: scanId.substring(0, 8),
+          inv: invCount,
+          proj: projCount
+        }),
+        undoable: 0
       })
 
       return { success: true }
 
     } catch (e) {
       console.error('Import execution failed:', e)
+      for (const committedFile of committedFiles) {
+        try {
+          if (fs.existsSync(committedFile)) fs.rmSync(committedFile, { force: true })
+        } catch (cleanupError) {
+          console.error('Failed to roll back imported attachment', cleanupError)
+        }
+      }
       throw e
     } finally {
+      fs.rmSync(stagingRoot, { recursive: true, force: true })
       this.cleanupTemp(scanId)
     }
   }
 
-  public async generateTemplate(filePath: string) {
+  public async generateTemplate(filePath: string): Promise<{ success: true }> {
     try {
       const zip = new AdmZip()
       
-      const demoMeta: BackupMeta = {
-        version: '2.0',
+      const demoMeta: BusinessBundleMeta = {
+        format: BUSINESS_BUNDLE_FORMAT,
+        kind: 'business-bundle',
+        version: BUSINESS_BUNDLE_VERSION,
         createdAt: Date.now(),
         inventory: [
           {
@@ -629,7 +786,7 @@ class BackupManager {
       zip.addFile("assets/design_draft.png", dummyPng) 
       zip.addFile("assets/requirements.docx", Buffer.from("Dummy Word Doc", "utf8"))
 
-      zip.writeZip(filePath)
+      this.writeZipAtomically(zip, filePath)
 
       return { success: true }
     } catch (e) {
@@ -638,17 +795,285 @@ class BackupManager {
     }
   }
 
-  private cleanupTemp(scanId: string) {
-    const dir = this.tempSessions.get(scanId)
-    if (dir && fs.existsSync(dir)) {
+  private validateBusinessBundleMeta(raw: unknown): BusinessBundleMeta {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new Error('INVALID_BUNDLE_META')
+    }
+    const candidate = raw as Record<string, unknown>
+    if (
+      typeof candidate.version !== 'string' ||
+      ![LEGACY_BUNDLE_VERSION, BUSINESS_BUNDLE_VERSION].includes(candidate.version)
+    ) {
+      throw new Error(`UNSUPPORTED_BUNDLE_VERSION:${String(candidate.version || 'missing')}`)
+    }
+    if (
+      candidate.version === BUSINESS_BUNDLE_VERSION &&
+      (candidate.format !== BUSINESS_BUNDLE_FORMAT || candidate.kind !== 'business-bundle')
+    ) {
+      throw new Error('INVALID_BUNDLE_FORMAT')
+    }
+    if (!Number.isFinite(candidate.createdAt)) throw new Error('INVALID_BUNDLE_CREATED_AT')
+    if (
+      !Array.isArray(candidate.inventory) ||
+      !Array.isArray(candidate.projects) ||
+      !Array.isArray(candidate.projectItems)
+    ) {
+      throw new Error('INVALID_BUNDLE_STRUCTURE')
+    }
+    if (
+      candidate.inventory.length > 100_000 ||
+      candidate.projects.length > 100_000 ||
+      candidate.projectItems.length > 1_000_000
+    ) {
+      throw new Error('BUNDLE_RECORD_LIMIT_EXCEEDED')
+    }
+    const inventory = candidate.inventory as Array<Record<string, unknown>>
+    const projects = candidate.projects as Array<Record<string, unknown>>
+    const projectItems = candidate.projectItems as Array<Record<string, unknown>>
+
+    const assertId = (value: unknown, field: string): void => {
+      if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+        throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      }
+    }
+    const assertText = (value: unknown, field: string, allowEmpty = true): void => {
+      if (typeof value !== 'string' || value.length > 10_000 || (!allowEmpty && !value.trim())) {
+        throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      }
+    }
+    const assertNonNegativeInt = (value: unknown, field: string): void => {
+      if (!Number.isSafeInteger(value) || (value as number) < 0) {
+        throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      }
+    }
+    const validatePathList = (value: unknown, field: string): void => {
+      if (value === undefined || value === null || value === '') return
+      if (typeof value !== 'string') throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      if (value.length > 1_000_000) throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      let paths: unknown
       try {
-        fs.rmSync(dir, { recursive: true, force: true })
+        paths = JSON.parse(value)
+      } catch {
+        throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      }
+      if (!Array.isArray(paths) || paths.length > 200) throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+      for (const assetPath of paths) {
+        if (typeof assetPath !== 'string' || assetPath.length > 1024) {
+          throw new Error(`INVALID_BUNDLE_FIELD:${field}`)
+        }
+        normalizeRelativePath(assetPath)
+      }
+    }
+
+    const inventoryIds = new Set<number>()
+    for (const item of inventory) {
+      assertId(item.id, 'inventory.id')
+      const itemId = item.id as number
+      if (inventoryIds.has(itemId)) throw new Error('DUPLICATE_BUNDLE_INVENTORY_ID')
+      inventoryIds.add(itemId)
+      assertText(item.category ?? '', 'inventory.category')
+      assertText(item.name ?? '', 'inventory.name')
+      assertText(item.value ?? '', 'inventory.value')
+      assertText(item.package ?? '', 'inventory.package')
+      assertText(item.location ?? '', 'inventory.location')
+      if (!String(item.name || '').trim() && !String(item.value || '').trim()) {
+        throw new Error('INVALID_BUNDLE_FIELD:inventory.name_or_value')
+      }
+      assertNonNegativeInt(item.quantity ?? 0, 'inventory.quantity')
+      assertNonNegativeInt(item.min_stock ?? 10, 'inventory.min_stock')
+      validatePathList(item.image_paths, 'inventory.image_paths')
+      validatePathList(item.datasheet_paths, 'inventory.datasheet_paths')
+    }
+
+    const projectIds = new Set<number>()
+    for (const project of projects) {
+      assertId(project.id, 'projects.id')
+      const projectId = project.id as number
+      if (projectIds.has(projectId)) throw new Error('DUPLICATE_BUNDLE_PROJECT_ID')
+      projectIds.add(projectId)
+      assertText(project.name, 'projects.name', false)
+      assertText(project.description ?? '', 'projects.description')
+      validatePathList(project.files, 'projects.files')
+    }
+
+    const linkKeys = new Set<string>()
+    for (const link of projectItems) {
+      assertId(link.project_id, 'projectItems.project_id')
+      assertId(link.inventory_id, 'projectItems.inventory_id')
+      if (!Number.isSafeInteger(link.quantity) || (link.quantity as number) <= 0) {
+        throw new Error('INVALID_BUNDLE_FIELD:projectItems.quantity')
+      }
+      const projectId = link.project_id as number
+      const inventoryId = link.inventory_id as number
+      if (!projectIds.has(projectId) || !inventoryIds.has(inventoryId)) {
+        throw new Error('INVALID_BUNDLE_REFERENCE')
+      }
+      const key = `${projectId}:${inventoryId}`
+      if (linkKeys.has(key)) throw new Error('DUPLICATE_BUNDLE_PROJECT_ITEM')
+      linkKeys.add(key)
+    }
+
+    return raw as BusinessBundleMeta
+  }
+
+  private readBusinessBundleMeta(metaPath: string): BusinessBundleMeta {
+    const stat = fs.statSync(metaPath)
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_META_SIZE) {
+      throw new Error('INVALID_BUNDLE_META_SIZE')
+    }
+
+    let raw: unknown
+    try {
+      raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+    } catch {
+      throw new Error('INVALID_BUNDLE_JSON')
+    }
+    return this.validateBusinessBundleMeta(raw)
+  }
+
+  private validateImportStrategies(strategies: ImportStrategies): void {
+    if (!strategies || typeof strategies !== 'object') throw new Error('INVALID_IMPORT_STRATEGIES')
+    const allowed = new Set(['skip', 'overwrite', 'keep_both'])
+    for (const group of [strategies.inventory, strategies.projects]) {
+      if (!group || typeof group !== 'object' || Array.isArray(group)) {
+        throw new Error('INVALID_IMPORT_STRATEGIES')
+      }
+      for (const [id, strategy] of Object.entries(group)) {
+        if (!Number.isInteger(Number(id)) || Number(id) <= 0 || !allowed.has(strategy)) {
+          throw new Error('INVALID_IMPORT_STRATEGIES')
+        }
+      }
+    }
+  }
+
+  private extractBundleSafely(zip: AdmZip, extractRoot: string): void {
+    const entries = zip.getEntries()
+    if (entries.length === 0 || entries.length > MAX_ENTRY_COUNT) {
+      throw new Error('INVALID_BUNDLE_ENTRY_COUNT')
+    }
+
+    let totalSize = 0
+    for (const entry of entries) {
+      const rawName = entry.entryName.replace(/\\/g, '/').replace(/\/+$/, '')
+      if (!rawName) continue
+      const normalized = normalizeRelativePath(rawName)
+      const entrySize = Number(entry.header.size) || 0
+      if (entrySize < 0 || entrySize > MAX_ENTRY_SIZE) throw new Error('BUNDLE_ENTRY_TOO_LARGE')
+      totalSize += entrySize
+      if (totalSize > MAX_BUNDLE_SIZE) throw new Error('BUNDLE_UNCOMPRESSED_SIZE_EXCEEDED')
+
+      const destination = resolvePathWithin(extractRoot, normalized)
+      if (entry.isDirectory) {
+        fs.mkdirSync(destination, { recursive: true })
+        continue
+      }
+
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      const data = entry.getData()
+      if (data.length !== entrySize) throw new Error('BUNDLE_ENTRY_SIZE_MISMATCH')
+      fs.writeFileSync(destination, data, { flag: 'wx' })
+    }
+  }
+
+  private addDirectoryFilesToZip(zip: AdmZip, sourceRoot: string, zipRoot: string): void {
+    if (!fs.existsSync(sourceRoot)) return
+    const traverse = (directory: string): void => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const absolutePath = path.join(directory, entry.name)
+        if (entry.isSymbolicLink()) continue
+        if (entry.isDirectory()) {
+          traverse(absolutePath)
+        } else if (entry.isFile()) {
+          const relativePath = normalizeRelativePath(path.relative(sourceRoot, absolutePath))
+          const zipDirectory = path.posix.join(zipRoot, path.posix.dirname(relativePath))
+          zip.addLocalFile(resolveExistingFileWithin(sourceRoot, relativePath), zipDirectory)
+        }
+      }
+    }
+    traverse(sourceRoot)
+  }
+
+  private writeZipAtomically(zip: AdmZip, filePath: string): void {
+    const destination = path.resolve(filePath)
+    const destinationDir = path.dirname(destination)
+    fs.mkdirSync(destinationDir, { recursive: true })
+    const temporaryPath = path.join(
+      destinationDir,
+      `.${sanitizePathSegment(path.basename(destination), 'bundle')}.${randomUUID()}.tmp`
+    )
+
+    try {
+      zip.writeZip(temporaryPath)
+      this.replaceFileAtomically(temporaryPath, destination)
+    } finally {
+      if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true })
+    }
+  }
+
+  private replaceFileAtomically(sourcePath: string, destinationPath: string): void {
+    let previousPath: string | null = null
+    if (fs.existsSync(destinationPath)) {
+      const destinationStat = fs.lstatSync(destinationPath)
+      if (!destinationStat.isFile() || destinationStat.isSymbolicLink()) {
+        throw new Error('INVALID_BACKUP_TARGET')
+      }
+      previousPath = `${destinationPath}.${randomUUID()}.previous`
+      fs.renameSync(destinationPath, previousPath)
+    }
+
+    try {
+      fs.renameSync(sourcePath, destinationPath)
+    } catch (error) {
+      if (previousPath && fs.existsSync(previousPath) && !fs.existsSync(destinationPath)) {
+        fs.renameSync(previousPath, destinationPath)
+      }
+      throw error
+    }
+
+    if (previousPath && fs.existsSync(previousPath)) {
+      try {
+        fs.rmSync(previousPath, { force: true })
+      } catch (error) {
+        console.warn('Failed to remove the replaced backup file', error)
+      }
+    }
+  }
+
+  public cleanupExpiredImportDirectories(maxAgeMs = TEMP_SESSION_MAX_AGE_MS): void {
+    const roots = [
+      path.join(os.tmpdir(), 'siliconvault_import'),
+      path.join(this.databaseManager.getStoragePath(), '.staging', 'imports')
+    ]
+    const now = Date.now()
+
+    for (const root of roots) {
+      if (!fs.existsSync(root)) continue
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+        try {
+          const directory = resolvePathWithin(root, entry.name)
+          const stat = fs.statSync(directory)
+          if (now - stat.mtimeMs > maxAgeMs) {
+            fs.rmSync(directory, { recursive: true, force: true })
+          }
+        } catch (error) {
+          console.warn('Failed to inspect stale import directory', error)
+        }
+      }
+    }
+  }
+
+  private cleanupTemp(scanId: string): void {
+    const session = this.tempSessions.get(scanId)
+    if (session?.extractRoot && fs.existsSync(session.extractRoot)) {
+      try {
+        fs.rmSync(session.extractRoot, { recursive: true, force: true })
       } catch (e) { console.error('Cleanup temp failed', e) }
     }
     this.tempSessions.delete(scanId)
   }
 
-  private generateCsv(items: any[]): string {
+  private generateCsv(items: InventoryItem[]): string {
     const headers = ['Category', 'Name', 'Value', 'Package', 'Quantity', 'Location', 'MinStock']
     const rows = items.map(item => {
       return [

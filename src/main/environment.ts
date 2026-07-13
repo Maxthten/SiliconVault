@@ -19,22 +19,18 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import { normalizeFilesystemPath } from './path-security'
+import type { RuntimeEnvironment } from '../shared/types'
 
 const DEVELOPMENT_STORAGE_DIR = 'SiliconVaultdata'
 const DEVELOPMENT_STORAGE_MARKER = '.development-storage'
-
-export interface RuntimeEnvironment {
-  mode: 'development' | 'production'
-  isDevelopment: boolean
-  storagePathLocked: boolean
-}
 
 export function isDevelopmentStorageMode(): boolean {
   return !app.isPackaged
 }
 
 export function getDevelopmentStoragePath(): string {
-  return path.resolve(app.getAppPath(), DEVELOPMENT_STORAGE_DIR)
+  return normalizeFilesystemPath(path.join(app.getAppPath(), DEVELOPMENT_STORAGE_DIR))
 }
 
 export function ensureDevelopmentStoragePath(): string {
@@ -63,7 +59,7 @@ export function ensureDevelopmentStoragePath(): string {
 export function isDevelopmentStoragePath(candidatePath: string): boolean {
   if (!candidatePath) return false
 
-  const resolvedCandidate = path.resolve(candidatePath)
+  const resolvedCandidate = normalizeFilesystemPath(candidatePath)
   if (resolvedCandidate === getDevelopmentStoragePath()) return true
   if (path.basename(resolvedCandidate).toLowerCase() === DEVELOPMENT_STORAGE_DIR.toLowerCase()) {
     return true

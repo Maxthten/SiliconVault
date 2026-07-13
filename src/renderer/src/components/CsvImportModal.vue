@@ -204,9 +204,11 @@ const handleClose = () => {
 <style scoped>
 /* 样式保持不变 */
 .csv-modal {
-  width: 800px;
+  width: min(800px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   background-color: var(--bg-modal);
   border-radius: 16px;
+  overflow: hidden;
 }
 
 :deep(.n-card-header__main) {
@@ -215,6 +217,7 @@ const handleClose = () => {
 
 .csv-modal-content {
   display: flex; flex-direction: column; gap: 20px;
+  overflow-x: auto;
 }
 
 .strategy-bar {
@@ -256,5 +259,25 @@ const handleClose = () => {
   background: transparent !important;
   color: var(--text-primary) !important;
   border-bottom: 1px solid var(--border-main) !important;
+}
+
+:deep(.n-card__content) {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+@media (max-width: 620px) {
+  .csv-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .strategy-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  :deep(.n-radio-group) {
+    display: flex;
+    flex-wrap: wrap;
+  }
 }
 </style>

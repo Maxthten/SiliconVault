@@ -15,28 +15,24 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-import { dbManager } from './db'
+import { dbManager, type DBManager } from './db'
+import type {
+  ConsumptionData,
+  InventoryItem,
+  OperationLog
+} from '../shared/types'
 
-export interface ConsumptionData {
-  summary: {
-    totalQuantity: number
-    topCategory: string
-    activeProject: string
-    intensity: 'low' | 'medium' | 'high'
-  }
-  timeline: { date: string; value: number }[]
-  categories: { name: string; value: number }[]
-  heatmap: { date: string; count: number }[]
-  ranking: { 
-    name: string
-    category: string
-    value: number
-    originalValue?: string 
-    package?: string       
-  }[]
+interface AnalyticsStockDetail {
+  inventory_id: number
+  name?: string
+  value?: string
+  category?: string
+  package?: string
+  delta: number
 }
 
-class AnalyticsManager {
+export class AnalyticsManager {
+  constructor(private readonly databaseManager: Pick<DBManager, 'getDb'> = dbManager) {}
   
   public getConsumptionStats(range: 'day' | 'week' | 'month' = 'week', useMock: boolean = false): ConsumptionData {
     if (useMock) {
@@ -46,10 +42,10 @@ class AnalyticsManager {
   }
 
   private calculateRealStats(range: string): ConsumptionData {
-    const db = dbManager.getDb()
+    const db = this.databaseManager.getDb()
     
     const now = new Date()
-    let startDate = new Date()
+    const startDate = new Date()
     if (range === 'day') startDate.setDate(now.getDate() - 1)
     if (range === 'week') startDate.setDate(now.getDate() - 7)
     if (range === 'month') startDate.setDate(now.getDate() - 30)
@@ -59,73 +55,58 @@ class AnalyticsManager {
     const logs = db.prepare(`
       SELECT * FROM operation_logs 
       WHERE op_type = 'STOCK' 
+      AND undone_at IS NULL
       AND created_at >= ?
       ORDER BY created_at ASC
-    `).all(startTimeStr) as any[]
+    `).all(startTimeStr) as OperationLog[]
 
     const timelineMap = new Map<string, number>()
     const categoryMap = new Map<string, number>()
     const itemTotalMap = new Map<number, number>()
     const itemMeta = new Map<number, { name: string; category: string; value: string; package: string }>() 
-    
-    const manualNetMap = new Map<string, number>() 
-
-    logs.forEach(log => {
-      if (!log.old_data || !log.new_data) return
-      const oldData = JSON.parse(log.old_data)
-      const newData = JSON.parse(log.new_data)
-      const id = log.target_id
-
-      if (!itemMeta.has(id)) {
-        itemMeta.set(id, { 
-          name: oldData.name, 
-          category: oldData.category || '未分类',
-          value: oldData.value || '', 
-          package: oldData.package || ''
-        })
-      }
-
-      const isBomDeduction = log.desc && log.desc.includes('生产扣减')
-      const date = log.created_at.split(' ')[0] 
-      const change = newData.quantity - oldData.quantity
-
-      if (!isBomDeduction) {
-        const key = `${date}_${id}`
-        manualNetMap.set(key, (manualNetMap.get(key) || 0) + change)
-      }
-    })
+    const projectTotalMap = new Map<string, number>()
 
     let totalConsumed = 0
 
-    logs.forEach(log => {
-      if (!log.old_data || !log.new_data) return
-      
-      const isBomDeduction = log.desc && log.desc.includes('生产扣减')
-      if (!isBomDeduction) return 
+    for (const log of logs) {
+      if (![
+        'INVENTORY_MANUAL_OUT',
+        'INVENTORY_BATCH_ADJUST',
+        'BOM_PRODUCTION_DEDUCTION',
+        'LEGACY'
+      ].includes(log.event_code || 'LEGACY')) {
+        continue
+      }
 
-      const oldData = JSON.parse(log.old_data)
-      const newData = JSON.parse(log.new_data)
-      const change = newData.quantity - oldData.quantity
-      const date = log.created_at.split(' ')[0]
-      const id = log.target_id
+      const date = (log.created_at || '').split(' ')[0]
+      if (!date) continue
+      const details = this.extractStockDetails(log)
+      for (const detail of details) {
+        if (detail.delta >= 0) continue
+        const qty = Math.abs(detail.delta)
+        const id = detail.inventory_id
+        const category = detail.category || '未分类'
+        itemMeta.set(id, {
+          name: detail.name || `未知元件 #${id}`,
+          category,
+          value: detail.value || '',
+          package: detail.package || ''
+        })
+        this.aggregate(qty, date, category, id, timelineMap, categoryMap, itemTotalMap)
+        totalConsumed += qty
+      }
 
-      const qty = Math.abs(change)
-      this.aggregate(qty, date, oldData.category || '未分类', id, timelineMap, categoryMap, itemTotalMap)
-      totalConsumed += qty
-    })
-
-    manualNetMap.forEach((netChange, key) => {
-      if (netChange < 0) {
-        const [date, idStr] = key.split('_')
-        const id = Number(idStr)
-        const meta = itemMeta.get(id)
-        if (meta) {
-          const qty = Math.abs(netChange)
-          this.aggregate(qty, date, meta.category, id, timelineMap, categoryMap, itemTotalMap)
-          totalConsumed += qty
+      if (log.event_code === 'BOM_PRODUCTION_DEDUCTION') {
+        const payload = this.parseJson<{ projectName?: string }>(log.details)
+        const projectName = String(payload?.projectName || '').trim()
+        if (projectName) {
+          const consumed = details
+            .filter(detail => detail.delta < 0)
+            .reduce((sum, detail) => sum + Math.abs(detail.delta), 0)
+          projectTotalMap.set(projectName, (projectTotalMap.get(projectName) || 0) + consumed)
         }
       }
-    })
+    }
 
     const timeline = Array.from(timelineMap.entries())
       .map(([date, value]) => ({ date, value }))
@@ -151,8 +132,8 @@ class AnalyticsManager {
 
     const heatmap = timeline.map(t => ({ date: t.date, count: t.value }))
 
-    // 使用特殊标识符替代硬编码中文，交由前端翻译
-    const activeProject = "__DAILY__" 
+    const activeProject = Array.from(projectTotalMap.entries())
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || '__DAILY__'
 
     return {
       summary: {
@@ -168,8 +149,37 @@ class AnalyticsManager {
     }
   }
 
+  private extractStockDetails(log: OperationLog): AnalyticsStockDetail[] {
+    const payload = this.parseJson<{ items?: AnalyticsStockDetail[] }>(log.details)
+    if (Array.isArray(payload?.items)) return payload.items
+
+    const oldData = this.parseJson<Partial<InventoryItem>>(log.old_data)
+    const newData = this.parseJson<Partial<InventoryItem>>(log.new_data)
+    if (!oldData || !newData) return []
+    const oldQty = Number(oldData.quantity)
+    const newQty = Number(newData.quantity)
+    if (!Number.isFinite(oldQty) || !Number.isFinite(newQty)) return []
+    return [{
+      inventory_id: log.target_id,
+      name: oldData.name,
+      value: oldData.value,
+      category: oldData.category,
+      package: oldData.package,
+      delta: newQty - oldQty
+    }]
+  }
+
+  private parseJson<T>(value?: string | null): T | null {
+    if (!value) return null
+    try {
+      return JSON.parse(value) as T
+    } catch {
+      return null
+    }
+  }
+
   private aggregate(qty: number, date: string, cat: string, id: number, 
-    tLine: Map<string, number>, catMap: Map<string, number>, itemMap: Map<number, number>) {
+    tLine: Map<string, number>, catMap: Map<string, number>, itemMap: Map<number, number>): void {
     
     tLine.set(date, (tLine.get(date) || 0) + qty)
     catMap.set(cat, (catMap.get(cat) || 0) + qty)

@@ -1,7 +1,7 @@
 {
   "name": "siliconvault",
   "productName": "SiliconVault",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "电子元器件库存管理系统",
   "main": "./out/main/index.js",
   "author": "Maxton Niu",
@@ -13,14 +13,17 @@
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test:phase1": "node scripts/run-phase1-integration.cjs",
+    "test:quality": "node scripts/run-quality-tests.cjs",
+    "test:unicode-build": "node scripts/test-unicode-build.cjs",
+    "test:integration": "node scripts/run-phase1-integration.cjs && node scripts/run-quality-tests.cjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
-    "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "postinstall": "electron-builder install-app-deps --config electron-builder.yml",
+    "build:unpack": "npm run build && electron-builder --config electron-builder.yml --dir",
+    "build:win": "npm run build && electron-builder --config electron-builder.yml --win",
+    "build:mac": "npm run build && electron-builder --config electron-builder.yml --mac",
+    "build:linux": "npm run build && electron-builder --config electron-builder.yml --linux"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -63,55 +66,5 @@
       "electron",
       "esbuild"
     ]
-  },
-  "build": {
-    "appId": "com.maxtonniu.siliconvault",
-    "productName": "SiliconVault",
-    "directories": {
-      "output": "dist",
-      "buildResources": "resources"
-    },
-    "files": [
-      "out/**/*",
-      "package.json"
-    ],
-    "win": {
-      "icon": "resources/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "allowElevation": true,
-      "shortcutName": "SiliconVault",
-      "createDesktopShortcut": true,
-      "license": "resources/license.txt",
-      "installerIcon": "resources/icon.ico",
-      "uninstallerIcon": "resources/icon.ico",
-      "installerHeaderIcon": "resources/icon.ico",
-      "deleteAppDataOnUninstall": true
-    },
-    "mac": {
-      "icon": "resources/icon.icns",
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.productivity"
-    },
-    "linux": {
-      "icon": "resources/icon.png",
-      "target": [
-        "AppImage"
-      ]
-    }
   }
 }

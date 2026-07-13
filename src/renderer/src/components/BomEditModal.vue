@@ -16,16 +16,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, watch} from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { 
   NModal, NCard, NInput, NInputNumber, NButton, NIcon, NEmpty, NTag, NSelect, useMessage, NSpin
 } from 'naive-ui'
 import { 
   Search, Add, Remove, SaveOutline, ArrowForward, CloudUploadOutline, 
-  DocumentTextOutline, CloseCircle, FolderOpenOutline 
+  DocumentTextOutline, CloseCircle, FolderOpenOutline
 } from '@vicons/ionicons5'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useI18n } from '../utils/i18n' 
+import { createLocalResourceUrl } from '../utils/asset-url'
+import { loadCategoryRules } from '../utils/category-rules'
+import { buildCategoryOptions, getCategoryRule } from '../utils/category'
 
 const props = defineProps<{
   show: boolean
@@ -35,21 +38,6 @@ const props = defineProps<{
 const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
 const { t } = useI18n()
-
-// 映射表：用于兼容旧数据键值
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
 
 const form = ref({
   id: undefined as number | undefined,
@@ -72,6 +60,9 @@ const sourceList = ref<any[]>([])
 const categoryOptions = ref<any[]>([])
 const packageOptions = ref<any[]>([])
 const categoryRules = ref<Record<string, any>>({})
+let inventorySearchRequestId = 0
+let inventorySearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let suppressInventorySearch = false
 
 // --- 初始化与加载 ---
 
@@ -80,28 +71,10 @@ const loadCategories = async () => {
   try {
     const cats = await window.api.fetchCategories()
     
-    const mergedMap = new Map<string, { label: string, value: string }>()
-
-    cats.forEach((rawCat: string) => {
-      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : rawCat
-
-      if (mergedMap.has(displayLabel)) {
-        // 优先保留旧数据值
-        if (LEGACY_MAP[rawCat]) {
-          mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-        }
-      } else {
-        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-      }
-    })
-
-    const mergedOptions = Array.from(mergedMap.values())
-    mergedOptions.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
-
-    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...mergedOptions]
+    categoryOptions.value = [
+      { label: t('inventory.allCategories'), value: null },
+      ...buildCategoryOptions(cats, t)
+    ]
   } catch (e) { console.error(e) }
 }
 
@@ -114,20 +87,17 @@ const loadPackages = async () => {
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
 watch(() => props.show, async (val) => {
   if (val) {
+    suppressInventorySearch = true
+    sourceSearch.value = ''
+    filterCategory.value = null
+    filterPackage.value = null
+
     await loadCategories()
     await loadPackages()
     await loadRules()
@@ -150,22 +120,22 @@ watch(() => props.show, async (val) => {
       fileList.value = []
     }
     
-    sourceSearch.value = ''
-    filterCategory.value = null
-    filterPackage.value = null
     showUploadArea.value = false
+    suppressInventorySearch = false
     searchInventory()
+  } else {
+    inventorySearchRequestId++
+    if (inventorySearchDebounceTimer) {
+      clearTimeout(inventorySearchDebounceTimer)
+      inventorySearchDebounceTimer = null
+    }
   }
 })
 
 // --- 动态显示逻辑 ---
 
 const getItemDisplay = (item: any) => {
-  // 核心：通过映射获取标准 Key，再查找规则
-  const rawCat = item.category
-  const ruleKey = LEGACY_MAP[rawCat] || rawCat
-  
-  const rule = categoryRules.value[ruleKey]
+  const rule = getCategoryRule(categoryRules.value, item.category)
   const rawLayout = rule?.layout
 
   let layout = { tl: 'value', tr: 'package', bl: 'name' }
@@ -191,6 +161,8 @@ const getItemDisplay = (item: any) => {
 // --- 库存搜索 ---
 
 const searchInventory = async () => {
+  if (!props.show || suppressInventorySearch) return
+  const requestId = ++inventorySearchRequestId
   try {
     const grouped = await window.api.fetchInventory({
       keyword: sourceSearch.value,
@@ -201,17 +173,36 @@ const searchInventory = async () => {
     for (const cat in grouped) {
       flat.push(...grouped[cat])
     }
-    sourceList.value = flat
-  } catch (e) { console.error(e) }
+    if (requestId === inventorySearchRequestId) sourceList.value = flat
+  } catch (e) {
+    if (requestId === inventorySearchRequestId) console.error(e)
+  }
 }
 
 watch(filterCategory, () => {
+  if (suppressInventorySearch) return
   loadPackages()
-  filterPackage.value = null
-  searchInventory()
+  if (filterPackage.value !== null) {
+    filterPackage.value = null
+  } else {
+    searchInventory()
+  }
 })
 
-watch([sourceSearch, filterPackage], () => { searchInventory() })
+watch(sourceSearch, () => {
+  if (suppressInventorySearch) return
+  if (inventorySearchDebounceTimer) clearTimeout(inventorySearchDebounceTimer)
+  inventorySearchDebounceTimer = setTimeout(searchInventory, 250)
+})
+
+watch(filterPackage, () => {
+  if (!suppressInventorySearch) searchInventory()
+})
+
+onUnmounted(() => {
+  inventorySearchRequestId++
+  if (inventorySearchDebounceTimer) clearTimeout(inventorySearchDebounceTimer)
+})
 
 // --- BOM 操作 ---
 
@@ -384,7 +375,7 @@ const handleSave = async () => {
                 <div class="file-icon">
                   <img 
                     v-if="['jpg','png','jpeg','webp'].some(e => path.toLowerCase().endsWith(e))" 
-                    :src="'local-resource://' + path" 
+                    :src="createLocalResourceUrl(path)"
                     class="thumb-img"
                   />
                   <n-icon v-else :component="DocumentTextOutline" />
@@ -480,8 +471,9 @@ const handleSave = async () => {
 <style scoped>
 /* 样式部分保持不变，此处省略 */
 .bom-modal {
-  width: 950px;
-  height: 800px;
+  width: min(820px, calc(100vw - 96px));
+  height: min(620px, calc(100vh - 80px));
+  max-height: calc(100vh - 80px);
   background-color: var(--bg-modal);
   border-radius: 16px;
   display: flex;
@@ -489,15 +481,15 @@ const handleSave = async () => {
 }
 
 :deep(.n-card__content) {
-  flex: 1; overflow: hidden; padding: 20px 24px !important;
+  flex: 1; overflow: hidden; padding: 16px 20px !important;
   display: flex; flex-direction: column;
 }
 :deep(.n-card-header) { 
-  padding: 20px 24px 10px 24px !important; 
+  padding: 16px 20px 8px 20px !important; 
   color: var(--text-primary);
 }
 :deep(.n-card__footer) {
-  padding: 16px 24px !important;
+  padding: 12px 20px !important;
   border-top: 1px solid var(--border-main);
   background: rgba(0,0,0,0.02);
 }
@@ -507,7 +499,8 @@ const handleSave = async () => {
 .editor-layout { display: flex; flex-direction: column; height: 100%; gap: 16px; }
 
 .meta-area { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-shrink: 0; }
-.meta-left { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.meta-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.meta-right { flex-shrink: 0; }
 .name-input { font-weight: bold; }
 
 .upload-panel {
@@ -575,15 +568,31 @@ const handleSave = async () => {
 
 .source-item, .bom-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; transition: all 0.2s;
+  gap: 8px;
+  padding: 8px 10px; border-radius: 8px; margin-bottom: 6px; transition: all 0.2s;
 }
 .source-item { cursor: pointer; }
 .source-item:hover { background: var(--border-hover); }
 
-.item-name { font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px; }
-.item-sub { display: flex; gap: 6px; align-items: center; }
-.val-text { color: var(--text-tertiary); font-size: 12px; }
-.sub-info { color: var(--text-tertiary); font-size: 12px; }
+.item-main,
+.bom-info {
+  flex: 1;
+  min-width: 0;
+}
+.item-name {
+  font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.item-sub { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.val-text,
+.sub-info {
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dark-tag { 
   background: var(--border-main); 
   color: var(--text-secondary); 
@@ -594,14 +603,122 @@ const handleSave = async () => {
   border: 1px solid rgba(10, 132, 255, 0.2); 
 }
 .bom-info { display: flex; flex-direction: column; }
-.bom-name { color: var(--text-primary); font-size: 14px; font-weight: 600; }
+.bom-name {
+  color: var(--text-primary); font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .sub-detail { color: var(--text-tertiary); font-weight: normal; font-size: 13px; }
-.bom-pkg { color: var(--text-tertiary); font-size: 12px; }
+.bom-pkg {
+  color: var(--text-tertiary); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
-.bom-ctrl { display: flex; align-items: center; gap: 8px; }
+.bom-ctrl { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .qty-input { width: 70px; }
 .x-text { color: var(--text-tertiary); font-size: 12px; }
 .divider { color: var(--text-tertiary); }
 .footer { display: flex; justify-content: flex-end; gap: 12px; }
 .btn-save { padding: 0 24px; font-weight: bold; }
+
+@media (max-height: 700px) and (min-width: 781px) {
+  .bom-modal {
+    height: calc(100vh - 80px);
+    max-height: calc(100vh - 80px);
+  }
+
+  :deep(.n-card-header) {
+    padding-top: 14px !important;
+  }
+
+  :deep(.n-card__content) {
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+
+  :deep(.n-card__footer) {
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .editor-layout {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 780px) {
+  .bom-modal {
+    width: calc(100vw - 32px);
+    height: calc(100vh - 32px);
+    max-height: calc(100vh - 32px);
+  }
+
+  :deep(.n-card__content) {
+    overflow-y: auto;
+  }
+
+  .editor-layout {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .upload-panel {
+    min-height: 104px;
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .drop-zone {
+    width: 150px;
+    min-height: 76px;
+  }
+
+  .file-grid {
+    min-width: 220px;
+    min-height: 76px;
+  }
+
+  .split-area {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+    min-height: 520px;
+  }
+
+  .panel {
+    min-height: 240px;
+  }
+
+  .divider {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .meta-area {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .upload-panel {
+    flex-direction: column;
+  }
+
+  .drop-zone {
+    width: 100%;
+  }
+
+  .filter-row {
+    flex-direction: column;
+  }
+
+  .source-item,
+  .bom-item {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .bom-ctrl {
+    flex-shrink: 0;
+  }
+}
 </style>

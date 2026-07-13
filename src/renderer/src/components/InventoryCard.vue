@@ -24,6 +24,7 @@ import {
 } from '@vicons/ionicons5'
 import { NIcon, NTag, NButton, NPopover, NCarousel, NDropdown, NSpin } from 'naive-ui'
 import { useI18n } from '../utils/i18n' // 引入国际化
+import { createLocalResourceUrl } from '../utils/asset-url'
 
 const { t } = useI18n()
 interface Props {
@@ -77,7 +78,7 @@ const allImages = computed(() => {
     const paths = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (!Array.isArray(paths)) return []
     return paths.map(p => ({
-      url: `local-resource://${p}`,
+      url: createLocalResourceUrl(p),
       originalPath: p
     }))
   } catch (e) { return [] }
@@ -177,7 +178,7 @@ const getStockColor = (qty: number, min: number) => {
         </template>
 
         <div class="preview-popover">
-          <n-carousel show-arrow autoplay style="width: 280px; height: 280px">
+          <n-carousel show-arrow class="preview-carousel">
             <div 
               v-for="(img, index) in allImages" 
               :key="index" 
@@ -197,8 +198,12 @@ const getStockColor = (qty: number, min: number) => {
       <div class="info-row primary">
         
         <div class="slot-item" v-if="layout.tl">
-          <span v-if="layout.tl === 'package'" class="pkg-tag-large">{{ item.package }}</span>
-          <span v-else class="value-text">{{ getFieldContent(layout.tl) }}</span>
+          <span v-if="layout.tl === 'package'" class="pkg-tag-large" :title="item.package">
+            {{ item.package }}
+          </span>
+          <span v-else class="value-text" :title="getFieldContent(layout.tl)">
+            {{ getFieldContent(layout.tl) }}
+          </span>
         </div>
 
         <div class="slot-item" v-if="layout.tr">
@@ -210,7 +215,9 @@ const getStockColor = (qty: number, min: number) => {
             <n-icon :component="LocationOutline" /> {{ item.location }}
           </span>
 
-          <span v-else class="meta-text">{{ getFieldContent(layout.tr) }}</span>
+          <span v-else class="meta-text" :title="getFieldContent(layout.tr)">
+            {{ getFieldContent(layout.tr) }}
+          </span>
         </div>
 
         <div v-if="allDocs.length > 0" class="doc-trigger">
@@ -233,7 +240,9 @@ const getStockColor = (qty: number, min: number) => {
       <div class="info-row secondary">
         
         <div class="slot-item" v-if="layout.bl">
-          <span class="name-text">{{ getFieldContent(layout.bl) }}</span>
+          <span class="name-text" :title="getFieldContent(layout.bl)">
+            {{ getFieldContent(layout.bl) }}
+          </span>
         </div>
 
         <div class="slot-item" v-if="layout.br">
@@ -245,7 +254,9 @@ const getStockColor = (qty: number, min: number) => {
             <n-icon :component="LocationOutline" /> {{ item.location }}
           </span>
 
-          <span v-else class="location-text">{{ getFieldContent(layout.br) }}</span>
+          <span v-else class="location-text" :title="getFieldContent(layout.br)">
+            {{ getFieldContent(layout.br) }}
+          </span>
         </div>
       </div>
     </div>
@@ -357,6 +368,10 @@ const getStockColor = (qty: number, min: number) => {
   font-size: 9px; padding: 1px 4px; border-top-left-radius: 4px;
 }
 .preview-popover { background: #000; }
+.preview-carousel {
+  width: min(280px, calc(100vw - 48px));
+  height: min(280px, calc(100vh - 96px));
+}
 .carousel-item { 
   width: 100%; height: 100%; position: relative; cursor: pointer; 
   display: flex; justify-content: center; align-items: center;
@@ -373,16 +388,17 @@ const getStockColor = (qty: number, min: number) => {
   gap: 4px; overflow: hidden;
 }
 
-.info-row { 
+.info-row {
+  min-width: 0;
   display: flex; justify-content: flex-start; align-items: center; gap: 8px; 
 }
 
-.slot-item { display: flex; align-items: center; max-width: 100%; }
+.slot-item { display: flex; align-items: center; min-width: 0; max-width: 100%; }
 
-.value-text { font-size: 18px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.name-text { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta-text { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
-.location-text { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
+.value-text { min-width: 0; font-size: 18px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name-text { min-width: 0; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta-text { min-width: 0; font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.location-text { min-width: 0; font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .pkg-tag { 
   background: var(--border-main);
@@ -398,7 +414,7 @@ const getStockColor = (qty: number, min: number) => {
 .multi-doc-icon { color: #409CFF; font-size: 18px; display: flex; align-items: center; gap: 2px; }
 .doc-count { font-size: 10px; font-weight: bold; margin-top: 2px; }
 
-.action-section { display: flex; align-items: center; gap: 12px; }
+.action-section { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 
 .ref-badge {
   display: flex; align-items: center; gap: 4px;
@@ -521,4 +537,21 @@ const getStockColor = (qty: number, min: number) => {
 .qty-display { font-size: 16px; font-weight: bold; min-width: 24px; text-align: center; }
 .qty-btn { width: 28px; height: 28px; }
 .manage-control { display: flex; gap: 10px; }
+
+@media (max-width: 420px) {
+  .card {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .info-section {
+    min-width: 0;
+  }
+
+  .action-section {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
 </style>

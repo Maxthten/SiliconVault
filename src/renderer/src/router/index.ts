@@ -1,13 +1,19 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
-// 页面组件引入
-import Inventory from '../views/Inventory.vue'
-import BomProject from '../views/BomProject.vue'
-import ReplenishView from '../views/ReplenishView.vue'
-import Consumption from '../views/Consumption.vue'
-import OperationLog from '../views/OperationLog.vue'
-import DataCenter from '../views/DataCenter.vue'
-import SettingsView from '../views/SettingsView.vue'
+const Inventory = (): Promise<typeof import('../views/Inventory.vue')> =>
+  import('../views/Inventory.vue')
+const BomProject = (): Promise<typeof import('../views/BomProject.vue')> =>
+  import('../views/BomProject.vue')
+const ReplenishView = (): Promise<typeof import('../views/ReplenishView.vue')> =>
+  import('../views/ReplenishView.vue')
+const Consumption = (): Promise<typeof import('../views/Consumption.vue')> =>
+  import('../views/Consumption.vue')
+const OperationLog = (): Promise<typeof import('../views/OperationLog.vue')> =>
+  import('../views/OperationLog.vue')
+const DataCenter = (): Promise<typeof import('../views/DataCenter.vue')> =>
+  import('../views/DataCenter.vue')
+const SettingsView = (): Promise<typeof import('../views/SettingsView.vue')> =>
+  import('../views/SettingsView.vue')
 
 const router = createRouter({
   // 使用 Hash 模式，适合 Electron 环境

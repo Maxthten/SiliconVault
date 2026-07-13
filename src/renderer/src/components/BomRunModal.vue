@@ -19,6 +19,8 @@
 import { ref, watch, computed } from 'vue'
 import { NModal, NCard, NInputNumber, NButton, NCollapse, NCollapseItem, NTable, useMessage, useDialog } from 'naive-ui'
 import { useI18n } from '../utils/i18n' 
+import { loadCategoryRules } from '../utils/category-rules'
+import { getCategoryRule } from '../utils/category'
 
 const props = defineProps<{
   show: boolean
@@ -29,21 +31,6 @@ const emit = defineEmits(['update:show', 'success'])
 const message = useMessage()
 const dialog = useDialog()
 const { t } = useI18n()
-
-// 映射表：用于兼容旧数据键值
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
 
 const multiplier = ref(1)
 const deductionList = ref<any[]>([])
@@ -81,24 +68,12 @@ const shortageItem = computed(() => {
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
 const getItemDisplay = (item: any) => {
-  // 核心：通过映射获取标准 Key，再查找规则
-  const rawCat = item.category
-  const ruleKey = LEGACY_MAP[rawCat] || rawCat
-  
-  const rule = categoryRules.value[ruleKey]
+  const rule = getCategoryRule(categoryRules.value, item.category)
   const rawLayout = rule?.layout
 
   let layout = { tl: 'value', tr: 'package', bl: 'name' }
@@ -165,7 +140,7 @@ const preCheckAndExecute = () => {
       content: t('bomRun.warnings.stockShortage.content', { count: lackItems.length, names }),
       positiveText: t('bomRun.warnings.stockShortage.positive'),
       negativeText: t('common.cancel'),
-      onPositiveClick: doExecute
+      onPositiveClick: () => doExecute(true)
     })
   } else {
     dialog.success({
@@ -173,24 +148,33 @@ const preCheckAndExecute = () => {
       content: t('bomRun.dialogs.confirmProduction.content', { count: multiplier.value }),
       positiveText: t('bomRun.dialogs.confirmProduction.positive'),
       negativeText: t('common.cancel'),
-      onPositiveClick: doExecute
+      onPositiveClick: () => doExecute(false)
     })
   }
 }
 
-const doExecute = async () => {
+const doExecute = async (allowNegative = false) => {
   try {
     const payload = deductionList.value.map(i => ({
       id: i.inventory_id,
       deductQty: i.deduct_qty
     }))
     
-    await window.api.executeDeduction(payload)
+    await window.api.executeDeduction(payload, {
+      projectId: props.project?.id,
+      projectName: props.project?.name,
+      productionQuantity: multiplier.value,
+      allowNegative
+    })
     message.success(t('bomRun.messages.deductSuccess', { count: payload.length }))
     emit('update:show', false)
     emit('success')
   } catch (e) {
-    message.error(t('bomRun.messages.deductFailed') + e)
+    const rawMessage = e instanceof Error ? e.message : String(e)
+    const cleanMessage = rawMessage
+      .replace(/^Error invoking remote method 'execute-deduction': Error:\s*/i, '')
+      .replace(/^Error:\s*/i, '')
+    message.error(`${t('bomRun.messages.deductFailed')}${cleanMessage}`)
   }
 }
 </script>
@@ -307,9 +291,15 @@ const doExecute = async () => {
 <style scoped>
 /* 样式保持不变 */
 .run-modal { 
-  width: 650px; 
+  width: min(650px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   background-color: var(--bg-modal); 
   border-radius: 16px; 
+}
+
+:deep(.n-card__content) {
+  overflow-y: auto;
+  min-height: 0;
 }
 
 :deep(.n-card-header__main) {
@@ -378,4 +368,24 @@ const doExecute = async () => {
   padding: 16px 24px !important;
 }
 .footer { display: flex; justify-content: flex-end; gap: 12px; }
+
+@media (max-width: 580px), (max-height: 650px) {
+  .run-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .control-container { padding: 18px; }
+  .control-panel {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+  .input-group {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .multiplier-input { width: 100%; }
+  .table-container { overflow-x: auto; }
+  .dark-table { min-width: 520px; }
+}
 </style>

@@ -29,17 +29,27 @@ import {
   ArrowUpOutline,
   ArrowDownOutline,
   CloudDownloadOutline,
-  CloudUploadOutline
+  CloudUploadOutline,
+  ListOutline,
+  CheckmarkDoneOutline,
+  BanOutline
 } from '@vicons/ionicons5'
 import { NIcon, NSpin, useMessage, useDialog, NInput, NSelect } from 'naive-ui'
 import { useI18n } from '../utils/i18n'
+import { loadCategoryRules } from '../utils/category-rules'
 
 interface Log {
   id: number
   op_type: 'CREATE' | 'UPDATE' | 'DELETE' | 'STOCK' | 'IMPORT' | 'EXPORT'
-  target_type: 'INVENTORY' | 'PROJECT'
+  target_type: 'INVENTORY' | 'PROJECT' | 'SYSTEM'
   target_id: number
-  desc: string
+  event_code?: string
+  summary_key?: string
+  summary_params?: string
+  details?: string
+  undoable: number
+  undone_at?: string | null
+  desc?: string
   old_data?: string
   new_data?: string
   created_at: string
@@ -50,6 +60,7 @@ const isLoading = ref(false)
 const searchQuery = ref('')
 const filterType = ref<string>('') // 修正初始化为空字符串
 const categoryRules = ref<Record<string, any>>({})
+const expandedLogIds = ref<Set<number>>(new Set())
 
 const message = useMessage()
 const dialog = useDialog()
@@ -58,25 +69,20 @@ const { t, locale } = useI18n()
 // 显式定义返回类型以匹配 SelectOption
 const typeOptions = computed<{ label: string; value: string }[]>(() => [
   { label: t('operationLog.filters.all'), value: '' },
-  { label: t('operationLog.types.stock'), value: 'STOCK' },
-  { label: t('operationLog.types.create'), value: 'CREATE' },
-  { label: t('operationLog.types.update'), value: 'UPDATE' },
-  { label: t('operationLog.types.delete'), value: 'DELETE' },
-  { label: t('operationLog.types.import'), value: 'IMPORT' },
-  { label: t('operationLog.types.export'), value: 'EXPORT' }
+  { label: t('operationLog.events.manualIn'), value: 'INVENTORY_MANUAL_IN' },
+  { label: t('operationLog.events.manualOut'), value: 'INVENTORY_MANUAL_OUT' },
+  { label: t('operationLog.events.batchAdjust'), value: 'INVENTORY_BATCH_ADJUST' },
+  { label: t('operationLog.events.bomDeduction'), value: 'BOM_PRODUCTION_DEDUCTION' },
+  { label: t('operationLog.events.csvImport'), value: 'CSV_IMPORT' },
+  { label: t('operationLog.types.create'), value: 'OP:CREATE' },
+  { label: t('operationLog.types.update'), value: 'OP:UPDATE' },
+  { label: t('operationLog.types.delete'), value: 'OP:DELETE' },
+  { label: t('operationLog.types.export'), value: 'OP:EXPORT' }
 ])
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
@@ -96,11 +102,14 @@ const loadLogs = async () => {
 const filteredLogs = computed(() => {
   return logs.value.filter(log => {
     // 空字符串表示全部
-    const matchType = !filterType.value || log.op_type === filterType.value
+    const matchType = !filterType.value ||
+      (filterType.value.startsWith('OP:')
+        ? log.op_type === filterType.value.slice(3)
+        : log.event_code === filterType.value)
     
     const dynamicTitle = getDynamicLogTitle(log)
     const matchSearch = !searchQuery.value || 
-      log.desc.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      (log.desc || '').toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       dynamicTitle.toLowerCase().includes(searchQuery.value.toLowerCase())
     
     return matchType && matchSearch
@@ -108,9 +117,21 @@ const filteredLogs = computed(() => {
 })
 
 const getStockDelta = (log: Log) => {
-  if (log.op_type !== 'STOCK' || !log.old_data || !log.new_data) return null
+  if (log.op_type !== 'STOCK') return null
   
   try {
+    const detailPayload = log.details ? JSON.parse(log.details) : null
+    if (Array.isArray(detailPayload?.items)) {
+      const deltas = detailPayload.items.map((item: any) => Number(item.delta) || 0)
+      const inbound = deltas.filter((delta: number) => delta > 0).reduce((sum: number, delta: number) => sum + delta, 0)
+      const outbound = deltas.filter((delta: number) => delta < 0).reduce((sum: number, delta: number) => sum + Math.abs(delta), 0)
+      if (inbound > 0 && outbound > 0) return { val: `+${inbound} / -${outbound}`, type: 'mixed' }
+      if (inbound > 0) return { val: `+${inbound}`, type: 'up' }
+      if (outbound > 0) return { val: `-${outbound}`, type: 'down' }
+      return null
+    }
+
+    if (!log.old_data || !log.new_data) return null
     const oldQ = JSON.parse(log.old_data).quantity || 0
     const newQ = JSON.parse(log.new_data).quantity || 0
     const diff = newQ - oldQ
@@ -124,9 +145,17 @@ const getStockDelta = (log: Log) => {
 }
 
 const getDynamicLogTitle = (log: Log) => {
-  // 1. 优先尝试解析 JSON 格式的新版日志
+  if (log.summary_key) {
+    try {
+      return t(log.summary_key, log.summary_params ? JSON.parse(log.summary_params) : {})
+    } catch {
+      return t(log.summary_key)
+    }
+  }
+
+  // 兼容第一阶段将翻译信息保存在 desc 中的日志
   try {
-    if (log.desc.startsWith('{')) {
+    if (log.desc?.startsWith('{')) {
       const jsonDesc = JSON.parse(log.desc)
       if (jsonDesc.key) {
         return t(jsonDesc.key, jsonDesc.params)
@@ -137,11 +166,11 @@ const getDynamicLogTitle = (log: Log) => {
   }
 
   // 2. 旧版日志的兼容处理逻辑 (IMPORT/EXPORT 直接显示)
-  if (['IMPORT', 'EXPORT'].includes(log.op_type)) return log.desc
+  if (['IMPORT', 'EXPORT'].includes(log.op_type)) return log.desc || log.event_code || log.op_type
 
   try {
     const snapshot = log.new_data ? JSON.parse(log.new_data) : (log.old_data ? JSON.parse(log.old_data) : null)
-    if (!snapshot) return log.desc
+    if (!snapshot) return log.desc || log.event_code || log.op_type
 
     const rule = categoryRules.value[snapshot.category]
     let targetKey = 'name'
@@ -166,17 +195,17 @@ const getDynamicLogTitle = (log: Log) => {
       default: return `${log.op_type}: ${displayName}`
     }
   } catch (e) {
-    return log.desc
+    return log.desc || log.event_code || log.op_type
   }
 }
 
 const handleUndo = (log: Log) => {
-  if (log.op_type === 'IMPORT') {
-    message.warning(t('operationLog.messages.importUndoWarning'))
+  if (!log.undoable) {
+    message.warning(t('operationLog.messages.notUndoable'))
     return
   }
-
-  if (log.op_type === 'EXPORT') {
+  if (log.undone_at) {
+    message.warning(t('operationLog.messages.alreadyUndone'))
     return
   }
 
@@ -198,6 +227,32 @@ const handleUndo = (log: Log) => {
   })
 }
 
+const getLogDetails = (log: Log) => {
+  if (!log.details) return []
+  try {
+    const payload = JSON.parse(log.details)
+    if (Array.isArray(payload?.items)) return payload.items
+    if (Array.isArray(payload?.changes)) {
+      return payload.changes.map((change: any) => ({
+        inventory_id: change.id,
+        name: change.after?.name || change.before?.name || '',
+        value: change.after?.value || change.before?.value || '',
+        delta: (change.after?.quantity || 0) - (change.before?.quantity || 0),
+        action: change.action
+      }))
+    }
+  } catch {
+    return []
+  }
+  return []
+}
+
+const toggleDetails = (logId: number) => {
+  const next = new Set(expandedLogIds.value)
+  next.has(logId) ? next.delete(logId) : next.add(logId)
+  expandedLogIds.value = next
+}
+
 const formatTime = (isoString: string) => {
   const date = new Date(isoString)
   return date.toLocaleString(locale.value, {
@@ -205,8 +260,15 @@ const formatTime = (isoString: string) => {
   }).replace(/\//g, '-')
 }
 
-const getOpConfig = (type: string) => {
-  switch (type) {
+const getOpConfig = (log: Log) => {
+  switch (log.event_code) {
+    case 'INVENTORY_MANUAL_IN': return { icon: ArrowUpOutline, color: '#30D158', label: t('operationLog.events.manualIn') }
+    case 'INVENTORY_MANUAL_OUT': return { icon: ArrowDownOutline, color: '#FF453A', label: t('operationLog.events.manualOut') }
+    case 'INVENTORY_BATCH_ADJUST': return { icon: ListOutline, color: '#FF9F0A', label: t('operationLog.events.batchAdjust') }
+    case 'BOM_PRODUCTION_DEDUCTION': return { icon: CubeOutline, color: '#FF453A', label: t('operationLog.events.bomDeduction') }
+    case 'CSV_IMPORT': return { icon: CloudDownloadOutline, color: '#BF5AF2', label: t('operationLog.events.csvImport') }
+  }
+  switch (log.op_type) {
     case 'CREATE': return { icon: AddCircleOutline, color: '#30D158', label: t('operationLog.types.create') }
     case 'DELETE': return { icon: TrashOutline, color: '#FF453A', label: t('operationLog.types.delete') }
     case 'UPDATE': return { icon: CreateOutline, color: '#0A84FF', label: t('operationLog.types.update') }
@@ -270,34 +332,80 @@ onMounted(() => { loadLogs() })
             :style="{ animationDelay: index * 0.03 + 's' }"
           >
             <div class="time-node">
-              <div class="dot" :style="{ borderColor: getOpConfig(log.op_type).color }">
-                <n-icon :component="getOpConfig(log.op_type).icon" :color="getOpConfig(log.op_type).color" size="14" />
+              <div class="dot" :style="{ borderColor: getOpConfig(log).color }">
+                <n-icon :component="getOpConfig(log).icon" :color="getOpConfig(log).color" size="14" />
               </div>
             </div>
 
-            <div class="log-card">
-              <div class="log-info">
-                <div class="log-header">
-                  <span class="op-tag" :style="{ color: getOpConfig(log.op_type).color, borderColor: getOpConfig(log.op_type).color }">
-                    {{ getOpConfig(log.op_type).label }}
-                  </span>
-                  <span class="log-time">{{ formatTime(log.created_at) }}</span>
+            <div class="log-card-wrapper">
+              <div class="log-card" :class="{ 'is-undone': Boolean(log.undone_at) }">
+                <div class="log-info">
+                  <div class="log-header">
+                    <span class="op-tag" :style="{ color: getOpConfig(log).color, borderColor: getOpConfig(log).color }">
+                      {{ getOpConfig(log).label }}
+                    </span>
+                    <span class="log-time">{{ formatTime(log.created_at) }}</span>
+                    <span v-if="log.undone_at" class="status-tag undone">
+                      <n-icon :component="CheckmarkDoneOutline" /> {{ t('operationLog.status.undone') }}
+                    </span>
+                    <span v-else-if="!log.undoable" class="status-tag locked">
+                      <n-icon :component="BanOutline" /> {{ t('operationLog.status.notUndoable') }}
+                    </span>
+                  </div>
+
+                  <div class="log-desc" :title="getDynamicLogTitle(log)">
+                    {{ getDynamicLogTitle(log) }}
+                  </div>
                 </div>
-                
-                <div class="log-desc">{{ getDynamicLogTitle(log) }}</div>
+
+                <div v-if="log.op_type === 'STOCK' && getStockDelta(log)" class="delta-display" :class="getStockDelta(log)?.type">
+                  <span class="delta-val">{{ getStockDelta(log)?.val }}</span>
+                  <n-icon
+                    v-if="getStockDelta(log)?.type !== 'mixed'"
+                    :component="getStockDelta(log)?.type === 'up' ? ArrowUpOutline : ArrowDownOutline"
+                  />
+                </div>
+
+                <div
+                  v-if="getLogDetails(log).length > 0"
+                  class="log-action"
+                  :title="t('operationLog.details.title')"
+                  @click="toggleDetails(log.id)"
+                >
+                  <n-icon :component="ListOutline" />
+                </div>
+
+                <div
+                  v-if="log.undoable && !log.undone_at"
+                  class="log-action"
+                  :title="t('operationLog.dialog.undoPositive')"
+                  @click="handleUndo(log)"
+                >
+                  <n-icon :component="ReturnDownBackOutline" />
+                </div>
               </div>
 
-              <div v-if="log.op_type === 'STOCK' && getStockDelta(log)" class="delta-display" :class="getStockDelta(log)?.type">
-                <span class="delta-val">{{ getStockDelta(log)?.val }}</span>
-                <n-icon :component="getStockDelta(log)?.type === 'up' ? ArrowUpOutline : ArrowDownOutline" />
-              </div>
-
-              <div 
-                v-if="log.op_type !== 'IMPORT' && log.op_type !== 'EXPORT'" 
-                class="log-action" 
-                @click="handleUndo(log)"
-              >
-                <n-icon :component="ReturnDownBackOutline" />
+              <div v-if="expandedLogIds.has(log.id)" class="log-details">
+                <div
+                  v-for="detail in getLogDetails(log)"
+                  :key="`${log.id}-${detail.inventory_id}`"
+                  class="detail-row"
+                >
+                  <span
+                    class="detail-name"
+                    :title="`${detail.name || t('common.unknown')} ${detail.value || ''}`"
+                  >
+                    {{ detail.name || t('common.unknown') }} {{ detail.value || '' }}
+                  </span>
+                  <span v-if="detail.action" class="detail-action">{{ t(`operationLog.details.${detail.action}`) }}</span>
+                  <span
+                    v-else
+                    class="detail-delta"
+                    :class="{ up: detail.delta > 0, down: detail.delta < 0 }"
+                  >
+                    {{ detail.delta > 0 ? `+${detail.delta}` : detail.delta }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -311,7 +419,8 @@ onMounted(() => { loadLogs() })
 <style scoped>
 /* 样式保持不变 */
 .log-page {
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: flex; flex-direction: column; 
   background: transparent; 
 }
@@ -325,7 +434,7 @@ onMounted(() => { loadLogs() })
   border-bottom: 1px solid var(--border-main);
 }
 .filter-group { width: 140px; flex-shrink: 0; }
-.search-box { flex: 1; }
+.search-box { flex: 1; min-width: 140px; }
 
 .title-badge { 
   display: flex; align-items: center; gap: 6px; 
@@ -382,9 +491,10 @@ onMounted(() => { loadLogs() })
   box-shadow: 0 0 0 4px rgba(0,0,0,0.05); 
 }
 
+.log-card-wrapper { flex: 1; min-width: 0; }
 
 .log-card {
-  flex: 1; 
+  width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-main);
   box-shadow: var(--shadow-card);
@@ -392,6 +502,7 @@ onMounted(() => { loadLogs() })
   display: flex; align-items: center; gap: 12px;
   transition: all 0.2s;
 }
+.log-card.is-undone { opacity: 0.62; }
 .log-card:hover { 
   background: var(--bg-card);
   border-color: var(--border-hover); 
@@ -407,6 +518,12 @@ onMounted(() => { loadLogs() })
   border: 1px solid;
 }
 .log-time { font-size: 12px; color: var(--text-tertiary); font-family: monospace; }
+.status-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; padding: 1px 5px; border-radius: 4px;
+}
+.status-tag.undone { color: #30D158; background: rgba(48, 209, 88, 0.12); }
+.status-tag.locked { color: var(--text-tertiary); background: var(--border-main); }
 .log-desc { font-size: 14px; color: var(--text-primary); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .delta-display {
@@ -414,6 +531,7 @@ onMounted(() => { loadLogs() })
 }
 .delta-display.up { color: #30D158; }
 .delta-display.down { color: #FF453A; }
+.delta-display.mixed { color: #FF9F0A; font-size: 13px; }
 
 .log-action {
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
@@ -422,9 +540,30 @@ onMounted(() => { loadLogs() })
 }
 .log-action:hover { color: var(--text-primary); background: var(--border-hover); }
 
+.log-details {
+  margin-top: 6px; padding: 8px 12px;
+  border: 1px solid var(--border-main); border-radius: 10px;
+  background: var(--bg-card);
+}
+.detail-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 5px 0; color: var(--text-secondary); font-size: 12px;
+  border-bottom: 1px dashed var(--border-main);
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-delta, .detail-action { font-family: monospace; font-weight: 700; }
+.detail-delta.up { color: #30D158; }
+.detail-delta.down { color: #FF453A; }
+.detail-action { color: #BF5AF2; }
+
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 768px) {
+  .toolbar { flex-wrap: wrap; }
+  .filter-group { flex: 1 1 140px; }
+  .search-box { flex: 1 1 220px; }
+  .title-badge { order: 3; }
   .log-card { flex-wrap: wrap; }
   .log-info { min-width: 100%; }
   .delta-display { margin-left: auto; }

@@ -1,7 +1,15 @@
 import { useMessage } from 'naive-ui'
 import { useI18n } from './i18n' 
 
-export const useI18nMessage = () => {
+interface I18nMessageApi {
+  success: (key: string) => void
+  error: (key: string) => void
+  warning: (key: string) => void
+  info: (key: string) => void
+  raw: ReturnType<typeof useMessage>
+}
+
+export const useI18nMessage = (): I18nMessageApi => {
   const message = useMessage()
   const { t } = useI18n()
 

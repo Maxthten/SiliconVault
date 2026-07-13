@@ -21,6 +21,8 @@ import { NSpin, NCollapse, NCollapseItem, NButton, NIcon, NPopover, NButtonGroup
 import { CheckmarkCircle, NotificationsOffOutline, NotificationsOutline, MoonOutline, TimeOutline } from '@vicons/ionicons5'
 import InventoryCard from '../components/InventoryCard.vue'
 import { useI18n } from '../utils/i18n' 
+import { loadCategoryRules } from '../utils/category-rules'
+import { getCategoryDisplayName } from '../utils/category'
 
 const message = useMessage()
 const { t } = useI18n()
@@ -36,32 +38,9 @@ const showSnoozeMenu = ref(false)
 const snoozeMode = ref<'menu' | 'custom'>('menu') 
 const customDays = ref(3) 
 
-// 映射表：用于合并新旧数据的显示
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
-
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
@@ -139,12 +118,7 @@ const redGroups = computed<GroupedData>(() => {
   const groups: GroupedData = {}
   rawList.value.forEach(item => {
     if (item.quantity <= 0) {
-      const rawCat = item.category
-      // 获取标准 Key 并翻译，实现合并显示
-      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : rawCat
+      const displayLabel = getCategoryDisplayName(item.category, t)
 
       if (!groups[displayLabel]) groups[displayLabel] = []
       groups[displayLabel].push(item)
@@ -159,11 +133,7 @@ const yellowGroups = computed<GroupedData>(() => {
   rawList.value.forEach(item => {
     const min = item.min_stock ?? 10
     if (item.quantity > 0 && item.quantity <= min) {
-      const rawCat = item.category
-      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : rawCat
+      const displayLabel = getCategoryDisplayName(item.category, t)
 
       if (!groups[displayLabel]) groups[displayLabel] = []
       groups[displayLabel].push(item)

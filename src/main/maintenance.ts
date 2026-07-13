@@ -6,220 +6,347 @@
  * it under the terms of the GNU Affero General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 import fs from 'fs'
 import path from 'path'
-import { dbManager } from './db'
+import { dbManager, type DBManager } from './db'
+import {
+  normalizeRelativePath,
+  resolveExistingFileWithin,
+  toPortableRelativePath
+} from './path-security'
+import type {
+  AssetScanResult,
+  DatabaseOptimizationResult,
+  MaintenanceDiagnostics,
+  PurgeResult
+} from '../shared/types'
 
-export interface UnusedAsset {
-  name: string
-  relativePath: string
-  size: number
-  mtime: number // 修改时间
+interface AssetPathRow {
+  image_paths?: string | null
+  datasheet_paths?: string | null
+  files?: string | null
 }
 
-export interface ScanResult {
-  totalSize: number
-  count: number
-  items: UnusedAsset[]
+interface AssetReferenceCollection {
+  referenced: Set<string>
+  invalidReferences: number
 }
 
-export interface PurgeResult {
-  successCount: number
-  failCount: number
-  freedSpace: number
+interface DatabaseDiagnostics {
+  integrityCheck: string
+  foreignKeyViolations: number
+  orphanProjectItems: number
+  databaseSize: number
+  walSize: number
+  pageCount: number
+  pageSize: number
+  freelistPages: number
+  reclaimableBytes: number
 }
 
-class MaintenanceManager {
+export class MaintenanceManager {
+  constructor(private readonly databaseManager: DBManager = dbManager) {}
 
-  /**
-   * 扫描未引用的资源文件
-   * 增加对文件夹不存在、权限不足的防御性处理
-   */
-  public scanUnusedAssets(): ScanResult {
-    const db = dbManager.getDb()
-    const assetsRoot = path.join(dbManager.getStoragePath(), 'assets')
+  private collectReferencedAssets(): AssetReferenceCollection {
+    const db = this.databaseManager.getDb()
+    const referenced = new Set<string>()
+    let invalidReferences = 0
 
-    // 1. 防御：如果 assets 目录压根不存在，直接返回空结果，不报错
-    if (!fs.existsSync(assetsRoot)) {
-      return { totalSize: 0, count: 0, items: [] }
-    }
-
-    // 2. 构建白名单 (从数据库获取所有正在使用的文件名)
-    const validFiles = new Set<string>()
-
-    // 辅助函数：解析 JSON 路径并提取文件名
-    const collectPaths = (jsonStr: string) => {
-      if (!jsonStr) return
+    const collectPaths = (jsonValue?: string | null): void => {
+      if (!jsonValue) return
+      let paths: unknown
       try {
-        const paths = JSON.parse(jsonStr)
-        if (Array.isArray(paths)) {
-          for (const p of paths) {
-            // 只取文件名，忽略目录差异
-            const filename = path.basename(p)
-            if (filename) validFiles.add(filename)
-          }
+        paths = JSON.parse(jsonValue)
+      } catch {
+        invalidReferences++
+        return
+      }
+      if (!Array.isArray(paths)) {
+        invalidReferences++
+        return
+      }
+      for (const assetPath of paths) {
+        try {
+          referenced.add(normalizeRelativePath(assetPath))
+        } catch {
+          invalidReferences++
         }
-      } catch (e) {
-        // 忽略脏数据
       }
     }
 
-    try {
-      // 搜集 Inventory 表
-      const inventoryItems = db.prepare("SELECT image_paths, datasheet_paths FROM inventory").all() as any[]
-      for (const item of inventoryItems) {
-        collectPaths(item.image_paths)
-        collectPaths(item.datasheet_paths)
-      }
-
-      // 搜集 Projects 表
-      const projects = db.prepare("SELECT files FROM projects").all() as any[]
-      for (const proj of projects) {
-        collectPaths(proj.files)
-      }
-    } catch (e) {
-      console.error('读取数据库白名单失败:', e)
-      throw new Error('数据库读取失败，无法执行安全扫描')
+    const inventoryItems = db.prepare(
+      'SELECT image_paths, datasheet_paths FROM inventory'
+    ).all() as AssetPathRow[]
+    for (const item of inventoryItems) {
+      collectPaths(item.image_paths)
+      collectPaths(item.datasheet_paths)
     }
 
-    // 3. 遍历物理文件系统
-    const unusedItems: UnusedAsset[] = []
+    const projects = db.prepare('SELECT files FROM projects').all() as AssetPathRow[]
+    for (const project of projects) collectPaths(project.files)
+    return { referenced, invalidReferences }
+  }
+
+  public scanUnusedAssets(): AssetScanResult {
+    const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
+    const emptyResult: AssetScanResult = {
+      totalSize: 0,
+      count: 0,
+      items: [],
+      scannedFiles: 0,
+      referencedFiles: 0,
+      missingReferencedFiles: [],
+      invalidReferences: 0,
+      skippedEntries: 0
+    }
+    if (!fs.existsSync(assetsRoot)) return emptyResult
+
+    const { referenced, invalidReferences } = this.collectReferencedAssets()
+    const unusedItems: AssetScanResult['items'] = []
     let totalSize = 0
+    let scannedFiles = 0
+    let skippedEntries = 0
 
-    // 递归遍历 assets 目录 (带错误处理)
-    const traverse = (currentPath: string) => {
+    const traverse = (currentPath: string): void => {
+      let entries: fs.Dirent[]
       try {
-        if (!fs.existsSync(currentPath)) return
+        entries = fs.readdirSync(currentPath, { withFileTypes: true })
+      } catch (error) {
+        skippedEntries++
+        console.warn(`无法访问目录 ${currentPath}:`, error)
+        return
+      }
 
-        const entries = fs.readdirSync(currentPath, { withFileTypes: true })
-
-        for (const entry of entries) {
-          const fullPath = path.join(currentPath, entry.name)
-
-          try {
-            if (entry.isDirectory()) {
-              traverse(fullPath) // 递归进入子目录
-            } else if (entry.isFile()) {
-              const filename = entry.name
-              // 排除系统生成的缩略图文件
-              if (filename === '.DS_Store' || filename === 'Thumbs.db') continue
-
-              // 核心判断：如果文件名不在白名单里，标记为垃圾
-              if (!validFiles.has(filename)) {
-                const stats = fs.statSync(fullPath)
-                unusedItems.push({
-                  name: filename,
-                  relativePath: path.relative(assetsRoot, fullPath),
-                  size: stats.size,
-                  mtime: stats.mtime.getTime()
-                })
-                totalSize += stats.size
-              }
-            }
-          } catch (innerErr) {
-            // 忽略单个文件的权限错误，继续扫描下一个
-            console.warn(`跳过文件 ${entry.name}:`, innerErr)
+      for (const entry of entries) {
+        const fullPath = path.join(currentPath, entry.name)
+        try {
+          if (entry.isSymbolicLink()) {
+            skippedEntries++
+            continue
           }
+          if (entry.isDirectory()) {
+            traverse(fullPath)
+            continue
+          }
+          if (!entry.isFile() || entry.name === '.DS_Store' || entry.name === 'Thumbs.db') {
+            continue
+          }
+
+          scannedFiles++
+          const relativePath = toPortableRelativePath(assetsRoot, fullPath)
+          if (!referenced.has(relativePath)) {
+            const stats = fs.statSync(fullPath)
+            unusedItems.push({
+              name: entry.name,
+              relativePath,
+              size: stats.size,
+              mtime: stats.mtime.getTime()
+            })
+            totalSize += stats.size
+          }
+        } catch (error) {
+          skippedEntries++
+          console.warn(`跳过资源 ${entry.name}:`, error)
         }
-      } catch (dirErr) {
-        console.warn(`无法访问目录 ${currentPath}:`, dirErr)
       }
     }
 
     traverse(assetsRoot)
 
+    const missingReferencedFiles = Array.from(referenced)
+      .filter((relativePath) => {
+        try {
+          resolveExistingFileWithin(assetsRoot, relativePath)
+          return false
+        } catch {
+          return true
+        }
+      })
+      .sort()
+
     return {
       totalSize,
       count: unusedItems.length,
-      items: unusedItems.sort((a, b) => b.size - a.size)
+      items: unusedItems.sort((left, right) => right.size - left.size),
+      scannedFiles,
+      referencedFiles: referenced.size,
+      missingReferencedFiles,
+      invalidReferences,
+      skippedEntries
     }
   }
 
-  /**
-   * 执行物理删除
-   */
   public purgeAssets(files: string[]): PurgeResult {
-    const assetsRoot = path.join(dbManager.getStoragePath(), 'assets')
-    let success = 0
-    let fail = 0
-    let freed = 0
-
-    // 防御：目录不存在
+    const assetsRoot = path.join(this.databaseManager.getStoragePath(), 'assets')
+    if (!Array.isArray(files) || files.length > 10_000) {
+      throw new Error('INVALID_PURGE_REQUEST')
+    }
     if (!fs.existsSync(assetsRoot)) {
-       return { successCount: 0, failCount: files.length, freedSpace: 0 }
+      return {
+        successCount: 0,
+        failCount: files.length,
+        skippedReferenced: 0,
+        freedSpace: 0,
+        removedDirectories: 0
+      }
     }
 
-    for (const relPath of files) {
+    const { referenced } = this.collectReferencedAssets()
+    const uniqueFiles = Array.from(new Set(files))
+    let successCount = 0
+    let failCount = files.length - uniqueFiles.length
+    let skippedReferenced = 0
+    let freedSpace = 0
+
+    for (const relativePath of uniqueFiles) {
       try {
-        // 安全检查：防止路径穿越攻击
-        const fullPath = path.join(assetsRoot, relPath)
-        
-        // 确保解析后的路径依然在 assetsRoot 内部
-        if (!fullPath.startsWith(assetsRoot)) {
-          fail++
+        const normalized = normalizeRelativePath(relativePath)
+        if (referenced.has(normalized)) {
+          skippedReferenced++
+          failCount++
           continue
         }
-
-        if (fs.existsSync(fullPath)) {
-          const stat = fs.statSync(fullPath)
-          fs.unlinkSync(fullPath)
-          success++
-          freed += stat.size
-        } else {
-          // 文件可能已经被手动删除了，算作忽略
-          fail++
+        const fullPath = resolveExistingFileWithin(assetsRoot, normalized)
+        const stat = fs.statSync(fullPath)
+        fs.unlinkSync(fullPath)
+        successCount++
+        freedSpace += stat.size
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.startsWith('INVALID_PATH:')) {
+          console.error(`删除文件失败: ${relativePath}`, error)
         }
-      } catch (e) {
-        console.error(`删除文件失败: ${relPath}`, e)
-        fail++
+        failCount++
       }
     }
 
-    return { successCount: success, failCount: fail, freedSpace: freed }
+    return {
+      successCount,
+      failCount,
+      skippedReferenced,
+      freedSpace,
+      removedDirectories: this.removeEmptyAssetDirectories(assetsRoot)
+    }
   }
 
-  /**
-   * 数据库深度优化
-   */
-  public optimizeDatabase() {
-    const db = dbManager.getDb()
-    
-    try {
-      // 1. 清理孤儿 BOM 数据 (指向了不存在的项目)
-      const res = db.prepare(`
-        DELETE FROM project_items 
-        WHERE project_id NOT IN (SELECT id FROM projects)
-      `).run()
+  public getMaintenanceDiagnostics(): MaintenanceDiagnostics {
+    return {
+      ...this.getDatabaseDiagnostics(),
+      assetScan: this.scanUnusedAssets()
+    }
+  }
 
-      // 2. 执行 VACUUM (这可能会耗时且要求独占锁)
-      // 我们用 try-catch 包裹 VACUUM，防止因为数据库繁忙导致整个优化失败
+  public optimizeDatabase(): DatabaseOptimizationResult {
+    const db = this.databaseManager.getDb()
+    const before = this.getDatabaseDiagnostics()
+    const removeOrphans = db.transaction(() => db.prepare(`
+      DELETE FROM project_items
+      WHERE project_id NOT IN (SELECT id FROM projects)
+         OR inventory_id NOT IN (SELECT id FROM inventory)
+    `).run().changes)
+    const orphansRemoved = removeOrphans()
+
+    db.pragma('optimize')
+
+    let checkpointed = false
+    try {
+      const checkpoint = db.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>
+      checkpointed = Number(checkpoint[0]?.busy || 0) === 0
+    } catch (error) {
+      console.warn('WAL checkpoint skipped:', error)
+    }
+
+    let vacuumed = false
+    try {
+      db.exec('VACUUM')
+      vacuumed = true
+    } catch (error) {
+      const sqliteError = error as { code?: string; message?: string }
+      if (sqliteError.code !== 'SQLITE_BUSY' && sqliteError.code !== 'SQLITE_LOCKED') throw error
+      console.warn('VACUUM skipped:', sqliteError.message)
+    }
+
+    const after = this.getDatabaseDiagnostics()
+    const sizeBefore = before.databaseSize + before.walSize
+    const sizeAfter = after.databaseSize + after.walSize
+    return {
+      integrityCheck: after.integrityCheck,
+      foreignKeyViolations: after.foreignKeyViolations,
+      orphansRemoved,
+      vacuumed,
+      checkpointed,
+      databaseSizeBefore: sizeBefore,
+      databaseSizeAfter: sizeAfter,
+      reclaimedBytes: Math.max(0, sizeBefore - sizeAfter)
+    }
+  }
+
+  private getDatabaseDiagnostics(): DatabaseDiagnostics {
+    const db = this.databaseManager.getDb()
+    const storagePath = this.databaseManager.getStoragePath()
+    const databasePath = path.join(storagePath, 'inventory.db')
+    const walPath = `${databasePath}-wal`
+    const integrityRows = db.pragma('integrity_check') as Array<{ integrity_check: string }>
+    const integrityCheck = integrityRows.map((row) => row.integrity_check).join(', ') || 'unknown'
+    const foreignKeyViolations = (db.pragma('foreign_key_check') as unknown[]).length
+    const orphanProjectItems = Number((db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM project_items pi
+      LEFT JOIN projects p ON p.id = pi.project_id
+      LEFT JOIN inventory i ON i.id = pi.inventory_id
+      WHERE p.id IS NULL OR i.id IS NULL
+    `).get() as { count: number }).count)
+    const pageCount = Number(db.pragma('page_count', { simple: true })) || 0
+    const pageSize = Number(db.pragma('page_size', { simple: true })) || 0
+    const freelistPages = Number(db.pragma('freelist_count', { simple: true })) || 0
+
+    return {
+      integrityCheck,
+      foreignKeyViolations,
+      orphanProjectItems,
+      databaseSize: this.getFileSize(databasePath),
+      walSize: this.getFileSize(walPath),
+      pageCount,
+      pageSize,
+      freelistPages,
+      reclaimableBytes: freelistPages * pageSize
+    }
+  }
+
+  private getFileSize(filePath: string): number {
+    try {
+      return fs.statSync(filePath).size
+    } catch {
+      return 0
+    }
+  }
+
+  private removeEmptyAssetDirectories(assetsRoot: string): number {
+    let removed = 0
+    const visit = (directory: string): void => {
+      let entries: fs.Dirent[]
       try {
-        db.exec('VACUUM')
-      } catch (vErr: any) {
-        console.warn('VACUUM 执行跳过:', vErr.message)
-        // 如果是 database is locked，我们依然返回 orphansRemoved 的结果，算部分成功
-        if (vErr.code !== 'SQLITE_BUSY' && vErr.code !== 'SQLITE_LOCKED') {
-           throw vErr
+        entries = fs.readdirSync(directory, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          visit(path.join(directory, entry.name))
         }
       }
-
-      return { 
-        orphansRemoved: res.changes,
-        vacuumed: true 
+      if (directory === assetsRoot) return
+      try {
+        if (fs.readdirSync(directory).length === 0) {
+          fs.rmdirSync(directory)
+          removed++
+        }
+      } catch {
+        // A concurrent writer or permission restriction can leave the directory in place safely.
       }
-    } catch (e) {
-      console.error('数据库优化严重失败:', e)
-      throw e
     }
+    visit(assetsRoot)
+    return removed
   }
 }
 

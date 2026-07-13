@@ -186,9 +186,18 @@ const handleBundleImport = async (path: string) => {
     const result = await window.api.scanBundle(path)
     currentScanResult.value = result
     showConflictModal.value = true
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
-    message.error(t('dataCenter.messages.bundleParseFailed'))
+    const errorText = String(e?.message || e)
+    if (errorText.includes('UNSUPPORTED_BUNDLE_VERSION')) {
+      message.error(t('dataCenter.messages.unsupportedBundleVersion'))
+    } else if (errorText.includes('INVALID_BUNDLE') || errorText.includes('BUNDLE_')) {
+      message.error(t('dataCenter.messages.invalidBundleStructure'))
+    } else if (errorText.includes('INVALID_PATH')) {
+      message.error(t('dataCenter.messages.unsafeBundlePath'))
+    } else {
+      message.error(t('dataCenter.messages.bundleParseFailed'))
+    }
   } finally {
     isProcessing.value = false
   }
@@ -293,7 +302,12 @@ const handleBundleImport = async (path: string) => {
 
 <style scoped>
 .data-center-page {
-  padding: 40px; height: 100vh; display: flex; flex-direction: column;
+  padding: 40px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   background: transparent; 
   color: var(--text-primary); 
   box-sizing: border-box;
@@ -367,5 +381,24 @@ const handleBundleImport = async (path: string) => {
 
 @media (max-width: 800px) {
   .main-actions { grid-template-columns: 1fr; max-height: none; }
+  .data-center-page { padding: 24px; }
+  .page-title { margin-bottom: 24px; }
+  .card-inner { padding: 28px; }
+}
+
+@media (max-width: 520px) {
+  .data-center-page { padding: 18px; }
+  .card-inner {
+    align-items: flex-start;
+    padding: 22px;
+  }
+  .icon-box {
+    width: 56px;
+    height: 56px;
+    font-size: 28px;
+    margin-right: 16px;
+  }
+  .title { font-size: 18px; }
+  .card-footer { padding: 14px 22px; }
 }
 </style>

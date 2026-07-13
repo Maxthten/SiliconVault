@@ -17,7 +17,7 @@ export const i18n = createI18n({
 
 // 导出一些快捷方法
 export const t = i18n.global.t
-export const useI18n = () => {
+export const useI18n = (): Pick<typeof i18n.global, 't' | 'locale'> => {
   // @ts-ignore: i18n 类型推断在某些 setup 环境下可能需要忽略检查
   const { t, locale } = i18n.global
   return { t, locale }

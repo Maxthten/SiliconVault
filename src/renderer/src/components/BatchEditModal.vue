@@ -27,23 +27,9 @@ import {
 } from '@vicons/ionicons5'
 import EditDialog from './EditDialog.vue' 
 import { useI18n } from '../utils/i18n' 
+import { buildCategoryOptions } from '../utils/category'
 
 const { t } = useI18n()
-
-// 映射表：用于在视觉上合并新旧数据
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
 
 interface InventoryItem {
   id: number
@@ -106,31 +92,11 @@ const filteredSourceList = computed(() => {
 // 改造后的分类选项：实现中英文视觉合并
 const categoryOptions = computed<any[]>(() => {
   const list = props.allInventory || []
-  // 获取当前列表中实际存在的所有分类
   const rawCats = new Set(list.map(i => i.category).filter(c => c))
-  
-  const mergedMap = new Map<string, { label: string, value: string }>()
-
-  rawCats.forEach((rawCat) => {
-    const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-    const transKey = `categories.${canonicalKey}`
-    const translated = t(transKey)
-    const displayLabel = translated !== transKey ? translated : rawCat
-
-    if (mergedMap.has(displayLabel)) {
-      // 如果当前是旧数据格式，优先保留旧数据值，防止筛选失效
-      if (LEGACY_MAP[rawCat]) {
-        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-      }
-    } else {
-      mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-    }
-  })
-
-  const mergedOptions = Array.from(mergedMap.values())
-  mergedOptions.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
-
-  return [{ label: t('inventory.allCategories'), value: null }, ...mergedOptions]
+  return [
+    { label: t('inventory.allCategories'), value: null },
+    ...buildCategoryOptions(rawCats, t)
+  ]
 })
 
 // 动作
@@ -331,7 +297,10 @@ watch(() => props.show, (val) => {
 <style scoped>
 /* 样式保持不变 */
 .batch-runner-modal { 
-  width: 950px; max-width: 95vw; height: 750px; max-height: 85vh;
+  width: min(950px, calc(100vw - 32px));
+  height: min(750px, calc(100vh - 32px));
+  max-width: none;
+  max-height: none;
   background: var(--bg-modal);
   border-radius: 16px; overflow: hidden;
   box-shadow: 0 0 0 1px var(--border-main), 0 20px 50px rgba(0,0,0,0.5);
@@ -456,9 +425,20 @@ watch(() => props.show, (val) => {
 }
 .empty-tip { text-align: center; color: var(--text-tertiary); padding: 20px; font-size: 12px; }
 
-@media (max-width: 768px) {
+@media (max-width: 820px), (max-height: 650px) {
   .modal-body { flex-direction: column; }
-  .source-panel { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid var(--border-main); }
+  .panel.source-panel { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid var(--border-main); }
   .target-panel { width: 100%; height: 50%; }
+}
+
+@media (max-width: 520px) {
+  .batch-runner-modal {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+  }
+  .search-bar { flex-wrap: wrap; }
+  .cat-select-wrapper { width: 100%; }
+  .selected-card { align-items: flex-start; gap: 10px; }
+  .card-ctrl { flex-wrap: wrap; justify-content: flex-end; }
 }
 </style>

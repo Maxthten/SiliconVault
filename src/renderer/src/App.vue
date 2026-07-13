@@ -26,25 +26,41 @@ import { getThemeOverrides } from '@renderer/utils/theme'
 
 const { locale } = useI18n() 
 
-const isDark = ref(true)
+const isDark = ref(document.documentElement.getAttribute('data-theme') !== 'light')
 
 const currentNaiveTheme = computed(() => (isDark.value ? darkTheme : lightTheme))
 const currentThemeOverrides = computed(() => getThemeOverrides(isDark.value))
 
-const toggleTheme = (event?: MouseEvent) => {
-  const switchThemeLogic = () => {
+interface ViewTransition {
+  ready: Promise<void>
+  finished: Promise<void>
+}
+
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (updateCallback: () => void | Promise<void>) => ViewTransition
+}
+
+let themeTransitionRunning = false
+
+const toggleTheme = (event?: MouseEvent): void => {
+  if (themeTransitionRunning) return
+
+  const switchThemeLogic = (): void => {
     isDark.value = !isDark.value
     const themeValue = isDark.value ? 'dark' : 'light'
     document.documentElement.setAttribute('data-theme', themeValue)
     localStorage.setItem('app-theme', themeValue)
   }
 
-  // @ts-ignore
-  if (!document.startViewTransition || !event) {
+  const transitionDocument = document as ViewTransitionDocument
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!transitionDocument.startViewTransition || !event || prefersReducedMotion) {
     switchThemeLogic()
+    nextTick(() => window.dispatchEvent(new Event('theme-transition-finished')))
     return
   }
 
+  themeTransitionRunning = true
   document.documentElement.classList.add('animating')
 
   const x = event.clientX
@@ -54,30 +70,35 @@ const toggleTheme = (event?: MouseEvent) => {
     Math.max(y, window.innerHeight - y)
   )
 
-  // @ts-ignore
-  const transition = document.startViewTransition(async () => {
+  const transition = transitionDocument.startViewTransition(async () => {
     switchThemeLogic()
     await nextTick()
   })
 
-  transition.ready.then(() => {
-    document.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${endRadius}px at ${x}px ${y}px)`
-        ]
-      },
-      {
-        duration: 500,
-        easing: 'ease-in',
-        pseudoElement: '::view-transition-new(root)'
-      }
-    )
-  })
+  transition.ready
+    .then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${endRadius}px at ${x}px ${y}px)`
+          ]
+        },
+        {
+          duration: 420,
+          easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)',
+          pseudoElement: '::view-transition-new(root)'
+        }
+      )
+    })
+    .catch(() => {
+      // The theme has already switched; only the optional reveal animation failed.
+    })
 
-  transition.finished.then(() => {
+  transition.finished.finally(() => {
     document.documentElement.classList.remove('animating')
+    themeTransitionRunning = false
+    window.dispatchEvent(new Event('theme-transition-finished'))
   })
 }
 
@@ -85,7 +106,7 @@ provide('toggleTheme', toggleTheme)
 provide('isDark', isDark)
 
 const currentTransition = ref(DEFAULT_ANIMATION)
-const updateTransition = () => {
+const updateTransition = (): void => {
   const saved = localStorage.getItem('ui-transition')
   currentTransition.value = saved || DEFAULT_ANIMATION
 }
@@ -95,7 +116,7 @@ const LIMIT_W = 800
 const LIMIT_H = 640
 const BUFFER = 20
 
-const handleResize = () => {
+const handleResize = (): void => {
   const w = window.innerWidth
   const h = window.innerHeight
   let wScore = 0
@@ -112,16 +133,6 @@ onMounted(() => {
   const savedLang = localStorage.getItem('app_language')
   if (savedLang) {
     locale.value = savedLang
-  }
-
-  // 初始化主题设置
-  const savedTheme = localStorage.getItem('app-theme')
-  if (savedTheme === 'light') {
-    isDark.value = false
-    document.documentElement.setAttribute('data-theme', 'light')
-  } else {
-    isDark.value = true
-    document.documentElement.setAttribute('data-theme', 'dark')
   }
 
   updateTransition()
@@ -207,6 +218,15 @@ html.animating .sidebar {
   backdrop-filter: none !important;
 }
 
+html.animating .main-content,
+html.animating .main-content *,
+html.animating .title-bar,
+html.animating .title-bar *,
+html.animating .sidebar,
+html.animating .minimal-glow {
+  transition: none !important;
+}
+
 /* 窗口尺寸过小提示 */
 .minimal-glow {
   position: fixed;
@@ -239,6 +259,8 @@ html.animating .sidebar {
 .app-layout {
   display: flex;
   flex: 1; 
+  min-height: 0;
+  min-width: 0;
   overflow: hidden; 
   position: relative;
   contain: layout; /* 隔离主布局 */
@@ -252,6 +274,8 @@ html.animating .sidebar {
 
 .main-content { 
   flex: 1; 
+  min-width: 0;
+  min-height: 0;
   position: relative; 
   overflow-y: auto; 
   overflow-x: hidden; 

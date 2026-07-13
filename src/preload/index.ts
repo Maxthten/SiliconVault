@@ -4,40 +4,11 @@
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-
-// 导入策略类型
-export type ImportStrategy = 'overwrite' | 'skip' | 'keep_both'
-
-// 扫描结果接口
-export interface ScanResult {
-  scanId: string
-  success: boolean
-  message?: string
-  stats?: {
-    total: number
-    conflicts: number
-    inserts: number
-  }
-  conflicts: {
-    inventory: Array<{
-      local: any
-      remote: any
-      hasFileDiff?: boolean
-    }>
-    projects: Array<{
-      local: any
-      remote: any
-      hasFileDiff?: boolean
-    }>
-  }
-  newItems: {
-    inventory: number
-    projects: number
-  }
-}
+import type { SiliconVaultAPI } from '../shared/types'
+export type * from '../shared/types'
 
 // 自定义 API
-const api = {
+const api: SiliconVaultAPI = {
   // --- 0. 窗口控制 ---
   windowControl: (action: 'minimize' | 'maximize' | 'close') => ipcRenderer.invoke('window-control', action),
 
@@ -45,8 +16,14 @@ const api = {
   fetchCategories: () => ipcRenderer.invoke('get-categories'),
   fetchPackages: (category) => ipcRenderer.invoke('get-packages', category),
   fetchInventory: (filters) => ipcRenderer.invoke('get-inventory', filters),
+  getInventoryHealth: () => ipcRenderer.invoke('get-inventory-health'),
   updateQty: (id, qty) => ipcRenderer.invoke('update-qty', { id, qty }),
   batchUpdateQty: (updates) => ipcRenderer.invoke('batch-update-qty', updates),
+  onInventoryChanged: (callback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('inventory-changed', listener)
+    return () => ipcRenderer.removeListener('inventory-changed', listener)
+  },
   deleteItem: (id) => ipcRenderer.invoke('delete-item', id),
   upsertItem: (data) => ipcRenderer.invoke('upsert-item', data),
 
@@ -56,11 +33,12 @@ const api = {
   getProjectDetail: (id) => ipcRenderer.invoke('get-project-detail', id),
   saveProject: (project) => ipcRenderer.invoke('save-project', project),
   deleteProject: (id) => ipcRenderer.invoke('delete-project', id),
-  executeDeduction: (items) => ipcRenderer.invoke('execute-deduction', items),
+  executeDeduction: (items, context) => ipcRenderer.invoke('execute-deduction', { items, context }),
 
   // --- 3. 排序与规则 ---
   updateSortOrder: (table, ids) => ipcRenderer.invoke('update-sort-order', { table, ids }),
   getCategoryRule: (cat) => ipcRenderer.invoke('get-category-rule', cat),
+  getAllCategoryRules: () => ipcRenderer.invoke('get-all-category-rules'),
   saveCategoryRule: (cat, rule) => ipcRenderer.invoke('save-category-rule', { cat, rule }),
   resetCategoryRule: (cat) => ipcRenderer.invoke('reset-category-rule', cat),
 
@@ -101,6 +79,7 @@ const api = {
   updateStoragePath: (newPath) => ipcRenderer.invoke('update-storage-path', newPath),
   scanUnusedAssets: () => ipcRenderer.invoke('scan-unused-assets'),
   purgeUnusedAssets: (files) => ipcRenderer.invoke('purge-unused-assets', files),
+  getMaintenanceDiagnostics: () => ipcRenderer.invoke('get-maintenance-diagnostics'),
   optimizeDatabase: () => ipcRenderer.invoke('optimize-database'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
@@ -117,8 +96,10 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore
-  window.electron = electronAPI
-  // @ts-ignore
-  window.api = api
+  const globalWindow = window as typeof window & {
+    electron: typeof electronAPI
+    api: SiliconVaultAPI
+  }
+  globalWindow.electron = electronAPI
+  globalWindow.api = api
 }

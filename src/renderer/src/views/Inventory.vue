@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { 
   Search, Add, CreateOutline, CheckmarkOutline, 
   ChevronDown, ChevronForward, FlashOutline, SettingsOutline
@@ -28,25 +28,16 @@ import EditDialog from '../components/EditDialog.vue'
 import BatchEditModal from '../components/BatchEditModal.vue'
 import { useI18n } from '../utils/i18n'
 import { useI18nMessage } from '../utils/message'
+import {
+  buildCategoryOptions,
+  getCategoryRule,
+  mergeInventoryGroups
+} from '../utils/category'
+import { loadCategoryRules } from '../utils/category-rules'
 
 const { t } = useI18n()
 const { success, error } = useI18nMessage()
 const dialog = useDialog()
-
-// 映射表：用于在视觉上合并新旧数据
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
 
 const searchQuery = ref('')
 const filterCategory = ref<string | null>(null)
@@ -64,6 +55,12 @@ const sortedGroups = ref<{ name: string, collapsed: boolean, items: any[] }[]>([
 const showModal = ref(false)
 const showBatchModal = ref(false)
 const currentEditItem = ref<any>(null)
+let inventoryRequestId = 0
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let quantityFlushTimer: ReturnType<typeof setTimeout> | null = null
+let quantityFlushInProgress = false
+const pendingQuantityUpdates = new Map<number, any>()
+const confirmedQuantities = new Map<number, number>()
 
 const allFlatItems = computed(() => {
   const flat = [] as any[]
@@ -75,15 +72,7 @@ const allFlatItems = computed(() => {
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
@@ -98,63 +87,31 @@ const loadPackages = async () => {
 const loadOptions = async () => {
   try {
     const cats = await window.api.fetchCategories()
-    
-    const mergedMap = new Map<string, { label: string, value: string }>()
-
-    cats.forEach((rawCat: string) => {
-      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : rawCat
-
-      if (mergedMap.has(displayLabel)) {
-        // 如果当前是旧数据格式，优先保留旧数据值，防止筛选失效
-        if (LEGACY_MAP[rawCat]) {
-          mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-        }
-      } else {
-        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-      }
-    })
-
-    const mergedOptions = Array.from(mergedMap.values())
-    // 保持一定的排序 (可选)
-    mergedOptions.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
-
-    categoryOptions.value = [{ label: t('inventory.allCategories'), value: null }, ...mergedOptions]
+    categoryOptions.value = [
+      { label: t('inventory.allCategories'), value: null },
+      ...buildCategoryOptions(cats, t)
+    ]
     
     await loadPackages()
   } catch (e) { console.error(e) }
 }
 
 const loadData = async () => {
+  const requestId = ++inventoryRequestId
   isLoading.value = true
   try {
-    await loadRules()
-
     const data = await window.api.fetchInventory({
       keyword: searchQuery.value,
       category: filterCategory.value || undefined,
       package: filterPackage.value || undefined
     })
+    if (requestId !== inventoryRequestId) return
+    if (!quantityFlushInProgress && pendingQuantityUpdates.size === 0) {
+      confirmedQuantities.clear()
+    }
     
     const oldStateMap = new Map(sortedGroups.value.map(g => [g.name, g.collapsed]))
-    
-    // 改造：分组展示时的视觉合并逻辑
-    // 即使数据库里是分开的 "Resistor" 和 "电阻"，在界面上也合并到同一个 Header 下
-    const mergedGroups = new Map<string, any[]>()
-
-    Object.entries(data).forEach(([rawCat, items]) => {
-      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : rawCat
-
-      if (!mergedGroups.has(displayLabel)) {
-        mergedGroups.set(displayLabel, [])
-      }
-      mergedGroups.get(displayLabel)!.push(...items)
-    })
+    const mergedGroups = mergeInventoryGroups(data, t)
 
     sortedGroups.value = Array.from(mergedGroups.entries()).map(([catName, items]) => ({
       name: catName,
@@ -163,10 +120,11 @@ const loadData = async () => {
     }))
 
   } catch (err) {
+    if (requestId !== inventoryRequestId) return
     error('loadFailed')
     console.error(err)
   } finally {
-    isLoading.value = false
+    if (requestId === inventoryRequestId) isLoading.value = false
   }
 }
 
@@ -175,8 +133,19 @@ watch(() => t('common.save'), () => {
   loadData() // 语言切换时刷新列表标题
 })
 
-watch(filterCategory, () => { loadPackages(); filterPackage.value = null; loadData() })
-watch([searchQuery, filterPackage], () => { loadData() })
+watch(filterCategory, () => {
+  loadPackages()
+  if (filterPackage.value !== null) {
+    filterPackage.value = null
+  } else {
+    loadData()
+  }
+})
+watch(filterPackage, () => { loadData() })
+watch(searchQuery, () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(loadData, 250)
+})
 
 const onDragStart = () => {
   isDragging.value = true
@@ -203,18 +172,50 @@ const onCategoryDragEnd = async (evt: any) => {
   } catch (e) { console.error(e) }
 }
 
-const handleQtyUpdate = async (item: any, delta: number) => {
-  const newQty = item.quantity + delta
-  if (delta < 0 && newQty < 0) return
-  const oldQty = item.quantity
-  item.quantity = newQty
+const scheduleQuantityFlush = (delay = 140) => {
+  if (quantityFlushTimer) clearTimeout(quantityFlushTimer)
+  quantityFlushTimer = setTimeout(flushPendingQuantityUpdates, delay)
+}
+
+const flushPendingQuantityUpdates = async () => {
+  if (quantityFlushInProgress || pendingQuantityUpdates.size === 0) return
+
+  quantityFlushInProgress = true
+  quantityFlushTimer = null
+  const snapshot = Array.from(pendingQuantityUpdates.entries()).map(([id, item]) => ({
+    id,
+    item,
+    qty: item.quantity,
+    confirmedQty: confirmedQuantities.get(id) ?? item.quantity
+  }))
+  snapshot.forEach(({ id }) => pendingQuantityUpdates.delete(id))
+
   try {
-    await window.api.updateQty(item.id, newQty)
+    await window.api.batchUpdateQty(snapshot.map(({ id, qty }) => ({ id, qty })))
+    snapshot.forEach(({ id, qty }) => confirmedQuantities.set(id, qty))
   } catch (err) {
-    item.quantity = oldQty
+    snapshot.forEach(({ id, item, qty, confirmedQty }) => {
+      const newerDelta = item.quantity - qty
+      item.quantity = Math.max(0, confirmedQty + newerDelta)
+      if (pendingQuantityUpdates.has(id)) {
+        pendingQuantityUpdates.set(id, item)
+      }
+    })
     error('updateFailed')
     console.error(err)
+  } finally {
+    quantityFlushInProgress = false
+    if (pendingQuantityUpdates.size > 0) scheduleQuantityFlush(0)
   }
+}
+
+const handleQtyUpdate = (item: any, delta: number) => {
+  const newQty = item.quantity + delta
+  if (delta < 0 && newQty < 0) return
+  if (!confirmedQuantities.has(item.id)) confirmedQuantities.set(item.id, item.quantity)
+  item.quantity = newQty
+  pendingQuantityUpdates.set(item.id, item)
+  scheduleQuantityFlush()
 }
 
 const handleDelete = (id: number) => {
@@ -264,7 +265,18 @@ const toggleCollapse = (group: any) => {
   group.collapsed = !group.collapsed
 }
 
-onMounted(() => { loadOptions(); loadData() })
+onMounted(async () => {
+  await loadRules()
+  loadOptions()
+  loadData()
+})
+
+onUnmounted(() => {
+  inventoryRequestId++
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  if (quantityFlushTimer) clearTimeout(quantityFlushTimer)
+  void flushPendingQuantityUpdates()
+})
 </script>
 
 <template>
@@ -309,7 +321,7 @@ onMounted(() => { loadOptions(); loadData() })
         <VueDraggable
           v-model="sortedGroups"
           :animation="350"
-          handle=".cat-header" 
+          handle=".cat-header"
           :disabled="!isEditMode"
           ghostClass="ghost-cat"
           class="category-list"
@@ -331,7 +343,6 @@ onMounted(() => { loadOptions(); loadData() })
             <div v-show="!group.collapsed" class="cat-content">
               <VueDraggable
                 v-model="group.items"
-                :group="group.name" 
                 :animation="350"
                 :swapThreshold="0.7"
                 easing="cubic-bezier(0.25, 1, 0.5, 1)"
@@ -352,7 +363,7 @@ onMounted(() => { loadOptions(); loadData() })
                   <InventoryCard 
                     :item="item" 
                     :is-edit-mode="isEditMode"
-                    :display-rule="categoryRules[item.category]" 
+                    :display-rule="getCategoryRule(categoryRules, item.category)"
                     @update-qty="(delta) => handleQtyUpdate(item, delta)"
                     @delete="handleDelete(item.id)"
                     @edit="handleEdit(item)"
@@ -378,7 +389,13 @@ onMounted(() => { loadOptions(); loadData() })
 
 <style scoped>
 /* 样式保持不变 */
-.inventory-page { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.inventory-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
 .toolbar {
   padding: 12px 16px; display: flex; gap: 12px; align-items: center;
@@ -387,9 +404,9 @@ onMounted(() => { loadOptions(); loadData() })
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-main);
 }
-.filter-group { display: flex; gap: 8px; width: 240px; }
+.filter-group { display: flex; gap: 8px; width: 240px; flex-shrink: 0; }
 .mini-select { flex: 1; }
-.search-box { flex: 1; }
+.search-box { flex: 1; min-width: 140px; }
 .tools { display: flex; gap: 12px; }
 
 :deep(.n-input .n-input__input-el),
@@ -436,7 +453,6 @@ onMounted(() => { loadOptions(); loadData() })
 .cat-info { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: var(--text-primary); }
 .cat-count { font-size: 14px; color: var(--text-tertiary); font-weight: normal; }
 .cat-arrow { color: var(--text-tertiary); }
-
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
@@ -458,4 +474,32 @@ onMounted(() => { loadOptions(); loadData() })
 
 .ghost-item { opacity: 0; pointer-events: none; }
 .ghost-cat { opacity: 0.2; background: var(--border-main); border-radius: 8px; }
+
+@media (max-width: 860px) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    width: min(300px, calc(100% - 116px));
+    flex: 1 1 240px;
+  }
+
+  .search-box {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .tools {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .toolbar { gap: 8px; padding: 10px 12px; }
+  .filter-group { width: 100%; flex-basis: 100%; }
+  .tools { order: 2; }
+  .search-box { order: 3; }
+  .list-container { padding: 12px; }
+}
 </style>

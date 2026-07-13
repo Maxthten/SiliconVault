@@ -23,11 +23,18 @@ import {
 } from 'naive-ui'
 import { 
   SettingsOutline, FlashOutline, AlertCircleOutline, 
-  CloseCircle, CloudUploadOutline, DocumentTextOutline 
+  CloseCircle, CloudUploadOutline, DocumentTextOutline
 } from '@vicons/ionicons5'
 import CategoryRuleModal from './CategoryRuleModal.vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useI18n } from '../utils/i18n' 
+import { createLocalResourceUrl } from '../utils/asset-url'
+import { loadCategoryRules } from '../utils/category-rules'
+import {
+  buildCategoryOptions,
+  canonicalizeCategory,
+  getCategoryRule
+} from '../utils/category'
 
 const props = defineProps<{
   show: boolean
@@ -37,22 +44,6 @@ const props = defineProps<{
 const emit = defineEmits(['update:show', 'refresh'])
 const message = useMessage()
 const { t } = useI18n()
-
-// 定义老数据(中文)到新标准(英文Key)的映射表
-// 用于兼容存量数据，防止出现“电阻”和“Resistor”并存的情况
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
 
 const form = ref({
   id: undefined as number | undefined,
@@ -80,14 +71,14 @@ const currentRule = ref({
 const showRuleModal = ref(false)
 const autoFormat = ref(true)
 
-const FORMAT_CATS = ['电阻', 'Resistor', '电容', 'Capacitor', '电感', 'Inductor']
+const FORMAT_CATS = ['Resistor', 'Capacitor', 'Inductor']
 
 // --- 动态获取显示的 Label 和 Placeholder ---
 
 const getLabel = (field: 'nameLabel' | 'valueLabel' | 'packageLabel') => {
   const cat = form.value.category
   // 核心：将可能的中文旧分类映射为英文 Key，以便去查语言包
-  const ruleKey = LEGACY_MAP[cat] || cat
+  const ruleKey = canonicalizeCategory(cat)
   
   const key = `fieldRules.${ruleKey}.${field}`
   const text = t(key)
@@ -102,7 +93,7 @@ const getLabel = (field: 'nameLabel' | 'valueLabel' | 'packageLabel') => {
 
 const getPlaceholder = (field: 'namePlaceholder' | 'valuePlaceholder') => {
   const cat = form.value.category
-  const ruleKey = LEGACY_MAP[cat] || cat
+  const ruleKey = canonicalizeCategory(cat)
 
   const key = `fieldRules.${ruleKey}.${field}`
   const text = t(key)
@@ -209,24 +200,25 @@ const removeDoc = (index: number) => form.value.datasheet_paths.splice(index, 1)
 const formatElectronicValue = (val: string, cat: string) => {
   if (!val) return val
   let res = val.trim()
+  const canonicalCategory = canonicalizeCategory(cat)
   const shiftRegex = /^(\d+)([kKmMuUnNpPrR])(\d+)$/
   const match = res.match(shiftRegex)
   if (match) res = `${match[1]}.${match[3]}${match[2]}`
   res = res.replace(/K/g, 'k').replace(/P/g, 'p').replace(/N/g, 'n').replace(/[uU]/g, 'µ')
   
-  if (['电阻', 'Resistor', '保险丝', 'Fuse'].includes(cat)) {
+  if (['Resistor', 'Fuse'].includes(canonicalCategory)) {
     res = res.replace(/(r|ohm|Ω)$/i, 'R')
     if (/[\dkmM]$/.test(res)) res += 'R'
   }
-  if (['二极管', 'Diode'].includes(cat)) {
+  if (canonicalCategory === 'Diode') {
     res = res.replace(/(v|volt)$/i, 'V')
     if (/[\d]$/.test(res)) res += 'V'
   }
-  if (['电容', 'Capacitor'].includes(cat)) {
+  if (canonicalCategory === 'Capacitor') {
     res = res.replace(/f$/i, 'F')
     if (/[\dpnµm]$/.test(res)) res += 'F'
   }
-  if (['电感', 'Inductor'].includes(cat)) {
+  if (canonicalCategory === 'Inductor') {
     res = res.replace(/h$/i, 'H')
     if (/[\dnµm]$/.test(res)) res += 'H'
   }
@@ -235,7 +227,7 @@ const formatElectronicValue = (val: string, cat: string) => {
 }
 
 const handleValueBlur = () => {
-  if (autoFormat.value && FORMAT_CATS.includes(form.value.category)) {
+  if (autoFormat.value && FORMAT_CATS.includes(canonicalizeCategory(form.value.category))) {
     const original = form.value.value
     const formatted = formatElectronicValue(original, form.value.category)
     if (original !== formatted) form.value.value = formatted
@@ -245,8 +237,8 @@ const handleValueBlur = () => {
 const loadRule = async () => {
   if (form.value.category) {
     try {
-      const rule = await window.api.getCategoryRule(form.value.category)
-      currentRule.value = rule
+      const rule = getCategoryRule(await loadCategoryRules(), form.value.category)
+      if (rule) currentRule.value = rule
     } catch (e) { console.error(e) }
   }
 }
@@ -255,31 +247,7 @@ watch(() => props.show, async (newVal) => {
   if (newVal) {
     const cats = await window.api.fetchCategories()
     
-    // 智能去重与映射逻辑
-    const mergedMap = new Map<string, { label: string, value: string }>()
-
-    cats.forEach((rawCat: string) => {
-      // 1. 找到对应的“标准英文Key”
-      const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-
-      // 2. 获取显示名称 (尝试翻译)
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : rawCat
-
-      // 3. 智能合并策略
-      if (mergedMap.has(displayLabel)) {
-        // 如果当前是“老数据格式”（即它在 LEGACY_MAP 里作为 Key 存在，比如“电阻”）
-        // 优先保留老数据格式作为 value，防止数据库分裂
-        if (LEGACY_MAP[rawCat]) {
-          mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-        }
-      } else {
-        mergedMap.set(displayLabel, { label: displayLabel, value: rawCat })
-      }
-    })
-
-    categoryOptions.value = Array.from(mergedMap.values())
+    categoryOptions.value = buildCategoryOptions(cats, t)
     
     if (props.editData) {
       let imgs = props.editData.image_paths
@@ -339,7 +307,7 @@ const handleSave = async () => {
 
 <template>
   <n-modal :show="show" @update:show="(v) => emit('update:show', v)">
-    <n-card :title="title" class="ios-modal-card" :bordered="false" size="huge" role="dialog" aria-modal="true">
+    <n-card :title="title" class="ios-modal-card" :bordered="false" size="medium" role="dialog" aria-modal="true">
       
       <div class="upload-container">
         <input 
@@ -362,7 +330,7 @@ const handleSave = async () => {
           @paste="handlePaste"
         >
           <div class="zone-content">
-            <n-icon size="32" :component="CloudUploadOutline" class="upload-icon" />
+            <n-icon size="28" :component="CloudUploadOutline" class="upload-icon" />
             <div class="hint-main">{{ t('editDialog.upload.hintMain') }}</div>
             <div class="hint-sub">{{ t('editDialog.upload.hintSub') }}</div>
           </div>
@@ -377,7 +345,7 @@ const handleSave = async () => {
               :key="path" 
               class="media-item img-item"
             >
-              <img :src="'local-resource://' + path" class="thumb-img" />
+              <img :src="createLocalResourceUrl(path)" class="thumb-img" />
               <div class="remove-btn" @click.stop="removeImage(index)">
                 <n-icon :component="CloseCircle" />
               </div>
@@ -399,17 +367,26 @@ const handleSave = async () => {
 
       <n-form class="main-form">
         <n-form-item-row :label="t('inventory.category')">
-          <div class="cat-row">
+          <div class="category-control-row">
             <n-select
               v-model:value="form.category"
-              filterable tag
+              filterable
+              tag
               :placeholder="t('editDialog.categoryPlaceholder')"
               :options="categoryOptions"
               class="cat-select"
             />
             <n-tooltip trigger="hover">
               <template #trigger>
-                <n-button circle secondary @click="showRuleModal = true">
+                <n-button
+                  circle
+                  secondary
+                  size="small"
+                  class="rule-settings-btn"
+                  :aria-label="t('editDialog.fieldSettings')"
+                  @mousedown.stop
+                  @click.stop="showRuleModal = true"
+                >
                   <template #icon><n-icon :component="SettingsOutline" /></template>
                 </n-button>
               </template>
@@ -501,11 +478,13 @@ const handleSave = async () => {
 <style scoped>
 /* 样式保持不变 */
 .ios-modal-card { 
-  width: 500px; 
+  width: min(460px, calc(100vw - 64px));
+  max-height: min(520px, calc(100vh - 96px));
   background-color: var(--bg-modal); 
   border-radius: 16px; 
   box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
   transition: background-color 0.3s ease, color 0.3s ease;
+  overflow: hidden;
 }
 
 :global([data-theme="light"]) .ios-modal-card {
@@ -513,7 +492,7 @@ const handleSave = async () => {
 }
 
 .upload-container {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .drop-zone {
@@ -521,7 +500,7 @@ const handleSave = async () => {
   background: rgba(255, 255, 255, 0.03);
   border: 2px dashed rgba(255, 255, 255, 0.15);
   border-radius: 12px;
-  padding: 24px 0;
+  padding: 10px 12px;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -623,14 +602,39 @@ const handleSave = async () => {
   color: var(--text-secondary) !important; 
 }
 
-.cat-row { display: flex; gap: 8px; width: 100%; }
-.cat-select { flex: 1; }
+.category-control-row {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rule-settings-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  color: var(--text-secondary);
+}
+.cat-select { flex: 1; min-width: 0; }
 .row-2 { display: flex; gap: 12px; }
-.row-2 > div { flex: 1; }
+.row-2 > div { flex: 1; min-width: 0; }
 .full-width { width: 100%; }
 .footer-btns { display: flex; justify-content: flex-end; gap: 12px; margin-top: 10px; }
 .btn-save { padding: 0 24px; font-weight: 600; }
-.label-container { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.label-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+}
+.label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .smart-tag {
   display: flex; align-items: center; gap: 4px; padding: 2px 8px;
@@ -638,6 +642,39 @@ const handleSave = async () => {
   background-color: var(--border-main); 
   color: var(--text-secondary);
   cursor: pointer; transition: all 0.3s; user-select: none; font-size: 11px; font-weight: bold;
+  flex-shrink: 0;
 }
 .smart-tag.active { background-color: #63e2b7; color: #000; }
+
+:deep(.n-card__content) {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+@media (max-width: 540px), (max-height: 720px) {
+  .ios-modal-card {
+    width: min(430px, calc(100vw - 48px));
+    max-height: min(500px, calc(100vh - 72px));
+  }
+
+  .drop-zone {
+    padding: 10px 12px;
+  }
+
+  .upload-container {
+    margin-bottom: 16px;
+  }
+}
+
+@media (max-width: 420px) {
+  .row-2 {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .ios-modal-card {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 32px);
+  }
+}
 </style>

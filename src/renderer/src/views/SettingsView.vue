@@ -16,10 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue' 
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { 
   NButton, NIcon, NInput, NInputGroup, useMessage, NModal, NAvatar, NDivider, NCard, NStatistic,
-  NSwitch, NSelect, NInputNumber, NCollapseTransition, NSpace
+  NSwitch, NSelect, NInputNumber, NCollapseTransition, NSpace, NCheckbox, NScrollbar, NTag
 } from 'naive-ui'
 import { 
   FolderOpenOutline, ArrowForwardCircleOutline, 
@@ -33,6 +33,16 @@ import {
 import localAvatar from '@renderer/assets/icon.png'
 import { DEFAULT_ANIMATION, ANIMATION_OPTIONS } from '@renderer/config/animations'
 import { useI18n } from '../utils/i18n' 
+import {
+  isQuoteLanguageMode,
+  QUOTE_LANGUAGE_CHANGED_EVENT,
+  QUOTE_LANGUAGE_STORAGE_KEY,
+  type QuoteLanguageMode
+} from '../data/quotes'
+import type {
+  AssetScanResult,
+  MaintenanceDiagnostics
+} from '../../../shared/types'
 
 const { t, locale } = useI18n()
 const message = useMessage()
@@ -45,6 +55,12 @@ const langOptions = [
 
 // 恢复使用配置文件中的动画选项
 const transitionOptions = ANIMATION_OPTIONS
+
+const quoteLanguageOptions = computed(() => [
+  { label: t('settings.appearance.quoteAuto'), value: 'auto' },
+  { label: t('settings.appearance.quoteChinese'), value: 'zh-CN' },
+  { label: t('settings.appearance.quoteEnglish'), value: 'en-US' }
+])
 
 const backupFreqOptions = [
   { label: t('settings.storage.freqExit'), value: 'exit' },
@@ -79,8 +95,12 @@ const isMigrating = ref(false)
 const showConfirm = ref(false)
 const isInitialized = ref(false) 
 
-const uiSettings = ref({
-  transitionName: DEFAULT_ANIMATION
+const uiSettings = ref<{
+  transitionName: string
+  quoteLanguage: QuoteLanguageMode
+}>({
+  transitionName: DEFAULT_ANIMATION,
+  quoteLanguage: 'auto'
 })
 
 const backupSettings = ref({
@@ -90,13 +110,17 @@ const backupSettings = ref({
   maxBackups: 5
 })
 
-const scanResult = ref<any>(null)
+const scanResult = ref<AssetScanResult | null>(null)
+const maintenanceDiagnostics = ref<MaintenanceDiagnostics | null>(null)
+const selectedAssets = ref<string[]>([])
 const isScanning = ref(false)
 const isPurging = ref(false)
 const isOptimizing = ref(false)
 const showScanModal = ref(false)
+const visibleUnusedAssets = computed(() => scanResult.value?.items.slice(0, 500) || [])
+const selectedAssetSet = computed(() => new Set(selectedAssets.value))
 
-const formatSize = (bytes: number) => {
+const formatSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
@@ -104,7 +128,7 @@ const formatSize = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-const init = async () => {
+const init = async (): Promise<void> => {
   try {
     const environment = await window.api.getRuntimeEnvironment()
     isDevelopmentStorage.value = environment.isDevelopment
@@ -125,13 +149,18 @@ const init = async () => {
       uiSettings.value.transitionName = DEFAULT_ANIMATION
     }
 
+    const savedQuoteLanguage = localStorage.getItem(QUOTE_LANGUAGE_STORAGE_KEY)
+    uiSettings.value.quoteLanguage = isQuoteLanguageMode(savedQuoteLanguage)
+      ? savedQuoteLanguage
+      : 'auto'
+
     if (APP_CONFIG.autoVersion) {
       const ver = await window.api.getAppVersion()
       displayVersion.value = `Version ${ver} (Beta)`
     } else {
       displayVersion.value = APP_CONFIG.manualVersion
     }
-  } catch (e) {
+  } catch {
     message.error('Init failed')
   } finally {
     setTimeout(() => {
@@ -144,7 +173,7 @@ onUnmounted(() => {
   message.destroyAll()
 })
 
-const handleLangChange = (val: string) => {
+const handleLangChange = (val: string): void => {
   // 类型断言
   locale.value = val as 'zh-CN' | 'en-US'
   localStorage.setItem('app_language', val)
@@ -158,16 +187,34 @@ watch(() => uiSettings.value.transitionName, (newVal) => {
   message.success(t('settings.messages.saved'), { duration: 1500 })
 })
 
+watch(() => uiSettings.value.quoteLanguage, (newVal) => {
+  if (!isInitialized.value) return
+  localStorage.setItem(QUOTE_LANGUAGE_STORAGE_KEY, newVal)
+  window.dispatchEvent(new Event(QUOTE_LANGUAGE_CHANGED_EVENT))
+  message.success(t('settings.messages.saved'), { duration: 1500 })
+})
+
 watch(backupSettings, async (newVal) => {
   if (!isInitialized.value) return 
   try {
     await window.api.saveAppSettings(JSON.parse(JSON.stringify(newVal)))
-  } catch (e) {
+  } catch (e: unknown) {
     console.error(e)
+    const errorText = e instanceof Error ? e.message : String(e)
+    message.error(
+      errorText.includes('BACKUP_PATH_INSIDE_ASSETS')
+        ? t('settings.messages.backupPathInsideAssets')
+        : t('settings.messages.invalidBackupSettings')
+    )
+    isInitialized.value = false
+    backupSettings.value = await window.api.getAppSettings()
+    setTimeout(() => {
+      isInitialized.value = true
+    }, 0)
   }
 }, { deep: true })
 
-const handleSelectBackupFolder = async () => {
+const handleSelectBackupFolder = async (): Promise<void> => {
   if (isDevelopmentStorage.value) return
   const path = await window.api.selectFolder()
   if (path) {
@@ -175,16 +222,16 @@ const handleSelectBackupFolder = async () => {
   }
 }
 
-const openLink = (url: string) => {
+const openLink = (url: string): void => {
   if (url) window.open(url, '_blank')
 }
 
-const handleSponsor = async () => {
+const handleSponsor = async (): Promise<void> => {
   await window.api.openDataFolder()
   message.info(t('settings.messages.pathSelected'))
 }
 
-const handleSelectFolder = async () => {
+const handleSelectFolder = async (): Promise<void> => {
   if (isDevelopmentStorage.value) return
   const path = await window.api.selectFolder()
   if (path) {
@@ -192,8 +239,12 @@ const handleSelectFolder = async () => {
   }
 }
 
-const preCheckMigration = () => {
+const preCheckMigration = (): void => {
   if (isDevelopmentStorage.value) return
+  if (!newPath.value?.trim()) {
+    message.warning(t('settings.messages.invalidStoragePath'))
+    return
+  }
   if (newPath.value === currentPath.value) {
     message.warning(t('settings.messages.opFailed'))
     return
@@ -201,7 +252,7 @@ const preCheckMigration = () => {
   showConfirm.value = true
 }
 
-const executeMigration = async () => {
+const executeMigration = async (): Promise<void> => {
   showConfirm.value = false
   isMigrating.value = true
   const hideLoading = message.loading(t('settings.advanced.execute') + '...', { duration: 0 })
@@ -210,51 +261,87 @@ const executeMigration = async () => {
     await window.api.updateStoragePath(newPath.value)
     hideLoading.destroy()
     message.success(t('settings.messages.saved'))
-  } catch (e) {
+  } catch (e: unknown) {
     hideLoading.destroy()
-    message.error(t('settings.messages.opFailed'))
+    const errorText = e instanceof Error ? e.message : String(e)
+    const migrationErrors: Array<[string, string]> = [
+      ['STORAGE_MIGRATION_SAME_PATH', 'sameStoragePath'],
+      ['STORAGE_MIGRATION_NESTED_PATH', 'nestedStoragePath'],
+      ['STORAGE_MIGRATION_TARGET_NOT_EMPTY', 'storageTargetNotEmpty'],
+      ['STORAGE_MIGRATION_INSUFFICIENT_SPACE', 'insufficientStorageSpace'],
+      ['STORAGE_MIGRATION_SYMLINK_NOT_ALLOWED', 'storageSymlinkRejected'],
+      ['STORAGE_MIGRATION_INTEGRITY_FAILED', 'storageIntegrityFailed'],
+      ['INVALID_STORAGE_PATH', 'invalidStoragePath']
+    ]
+    const matched = migrationErrors.find(([code]) => errorText.includes(code))
+    message.error(matched ? t(`settings.messages.${matched[1]}`) : t('settings.messages.opFailed'))
     isMigrating.value = false
   }
 }
 
-const handleScan = async () => {
+const handleScan = async (): Promise<void> => {
   isScanning.value = true
   try {
-    const res = await window.api.scanUnusedAssets()
-    scanResult.value = res
+    const diagnostics = await window.api.getMaintenanceDiagnostics()
+    maintenanceDiagnostics.value = diagnostics
+    scanResult.value = diagnostics.assetScan
+    selectedAssets.value = diagnostics.assetScan.items.map((item) => item.relativePath)
     showScanModal.value = true
-  } catch (e:any) {
-    message.error(`${t('settings.messages.opFailed')}: ${e.message || 'Error'}`)
+  } catch (error: unknown) {
+    message.error(`${t('settings.messages.opFailed')}: ${error instanceof Error ? error.message : 'Error'}`)
   } finally {
     isScanning.value = false
   }
 }
 
-const executePurge = async () => {
-  if (!scanResult.value || scanResult.value.items.length === 0) return
+const executePurge = async (): Promise<void> => {
+  if (!scanResult.value || selectedAssets.value.length === 0) return
   isPurging.value = true
-  const filesToDelete = scanResult.value.items.map(i => i.relativePath)
   try {
-    const res = await window.api.purgeUnusedAssets(filesToDelete)
-    message.success(`${t('settings.messages.saved')} (${formatSize(res.freedSpace)})`)
-    showScanModal.value = false
-    scanResult.value = null 
-  } catch (e) {
+    const result = await window.api.purgeUnusedAssets(selectedAssets.value)
+    message.success(t('settings.messages.cleanSuccess', {
+      files: result.successCount,
+      size: formatSize(result.freedSpace),
+      dirs: result.removedDirectories
+    }))
+    await handleScan()
+  } catch {
     message.error(t('settings.messages.opFailed'))
   } finally {
     isPurging.value = false
   }
 }
 
-const handleOptimize = async () => {
+const handleOptimize = async (): Promise<void> => {
   isOptimizing.value = true
   try {
-    await window.api.optimizeDatabase()
-    message.success(t('settings.messages.vacuumSuccess'))
-  } catch (e:any) {
-    message.error(`${t('settings.messages.opFailed')}: ${e.message}`)
+    const result = await window.api.optimizeDatabase()
+    message.success(t('settings.messages.vacuumSuccess', {
+      size: formatSize(result.reclaimedBytes),
+      orphans: result.orphansRemoved
+    }))
+    if (showScanModal.value) await handleScan()
+  } catch (error: unknown) {
+    message.error(`${t('settings.messages.opFailed')}: ${error instanceof Error ? error.message : ''}`)
   } finally {
     isOptimizing.value = false
+  }
+}
+
+const toggleSelectAllAssets = (): void => {
+  if (!scanResult.value) return
+  selectedAssets.value = selectedAssets.value.length === scanResult.value.items.length
+    ? []
+    : scanResult.value.items.map((item) => item.relativePath)
+}
+
+const toggleAssetSelection = (relativePath: string, checked: boolean): void => {
+  if (checked) {
+    if (!selectedAssetSet.value.has(relativePath)) {
+      selectedAssets.value = [...selectedAssets.value, relativePath]
+    }
+  } else {
+    selectedAssets.value = selectedAssets.value.filter((path) => path !== relativePath)
   }
 }
 
@@ -300,6 +387,16 @@ onMounted(init)
               <n-icon :component="FlashOutline" style="vertical-align: middle; margin-right: 4px;" />
               {{ t('settings.appearance.animationDesc') }}
             </div>
+          </div>
+
+          <div class="form-item">
+            <div class="label">{{ t('settings.appearance.quoteLanguage') }}</div>
+            <n-select
+              v-model:value="uiSettings.quoteLanguage"
+              :options="quoteLanguageOptions"
+              :placeholder="t('settings.appearance.quoteLanguagePlaceholder')"
+            />
+            <div class="sub-label">{{ t('settings.appearance.quoteLanguageDesc') }}</div>
           </div>
 
         </div>
@@ -544,7 +641,7 @@ onMounted(init)
       </div>
     </div>
 
-    <n-modal v-model:show="showScanModal" preset="dialog" :title="t('settings.scan.title')" style="width: 500px">
+    <n-modal v-model:show="showScanModal" preset="dialog" :title="t('settings.scan.title')" class="settings-dialog">
       <div v-if="scanResult" class="scan-modal-content">
         <n-card :bordered="false" class="stat-panel">
           <div class="stat-row">
@@ -554,6 +651,39 @@ onMounted(init)
             <n-statistic :label="t('settings.scan.freedSpace')">
               <template #default>{{ formatSize(scanResult.totalSize) }}</template>
             </n-statistic>
+          </div>
+          <div class="diagnostic-tags">
+            <n-tag size="small">{{ t('settings.scan.scannedFiles', { count: scanResult.scannedFiles }) }}</n-tag>
+            <n-tag size="small" type="info">{{ t('settings.scan.references', { count: scanResult.referencedFiles }) }}</n-tag>
+            <n-tag
+              size="small"
+              :type="scanResult.missingReferencedFiles.length > 0 ? 'warning' : 'success'"
+            >
+              {{ t('settings.scan.missingFiles', { count: scanResult.missingReferencedFiles.length }) }}
+            </n-tag>
+            <n-tag
+              size="small"
+              :type="scanResult.invalidReferences > 0 ? 'error' : 'success'"
+            >
+              {{ t('settings.scan.invalidReferences', { count: scanResult.invalidReferences }) }}
+            </n-tag>
+          </div>
+        </n-card>
+
+        <n-card v-if="maintenanceDiagnostics" size="small" :bordered="false" class="database-diagnostic">
+          <div class="diagnostic-line">
+            <span>{{ t('settings.scan.databaseIntegrity') }}</span>
+            <n-tag :type="maintenanceDiagnostics.integrityCheck === 'ok' ? 'success' : 'error'" size="small">
+              {{ maintenanceDiagnostics.integrityCheck }}
+            </n-tag>
+          </div>
+          <div class="diagnostic-line">
+            <span>{{ t('settings.scan.foreignKeyIssues') }}</span>
+            <strong>{{ maintenanceDiagnostics.foreignKeyViolations }}</strong>
+          </div>
+          <div class="diagnostic-line">
+            <span>{{ t('settings.scan.reclaimableDatabase') }}</span>
+            <strong>{{ formatSize(maintenanceDiagnostics.reclaimableBytes) }}</strong>
           </div>
         </n-card>
         
@@ -565,13 +695,39 @@ onMounted(init)
           <n-icon :component="LeafOutline" />
           <span>{{ t('settings.scan.success') }}</span>
         </div>
+
+        <div v-if="scanResult.count > 0" class="asset-selection">
+          <div class="asset-selection-header">
+            <span>{{ t('settings.scan.selected', { selected: selectedAssets.length, total: scanResult.count }) }}</span>
+            <n-button text type="primary" @click="toggleSelectAllAssets">
+              {{ selectedAssets.length === scanResult.count ? t('settings.scan.selectNone') : t('settings.scan.selectAll') }}
+            </n-button>
+          </div>
+          <n-scrollbar style="max-height: 220px">
+            <label
+              v-for="item in visibleUnusedAssets"
+              :key="item.relativePath"
+              class="asset-row"
+            >
+              <n-checkbox
+                :checked="selectedAssetSet.has(item.relativePath)"
+                @update:checked="(checked) => toggleAssetSelection(item.relativePath, checked)"
+              />
+              <span class="asset-path">{{ item.relativePath }}</span>
+              <span class="asset-size">{{ formatSize(item.size) }}</span>
+            </label>
+          </n-scrollbar>
+          <div v-if="scanResult.count > visibleUnusedAssets.length" class="list-limit-hint">
+            {{ t('settings.scan.listLimited', { count: visibleUnusedAssets.length }) }}
+          </div>
+        </div>
       </div>
       
       <template #action>
         <n-space>
           <n-button @click="showScanModal = false">{{ t('common.cancel') }}</n-button>
           <n-button 
-            v-if="scanResult && scanResult.count > 0" 
+            v-if="scanResult && selectedAssets.length > 0"
             type="error" 
             @click="executePurge" 
             :loading="isPurging"
@@ -582,7 +738,7 @@ onMounted(init)
       </template>
     </n-modal>
 
-    <n-modal v-model:show="showConfirm" preset="dialog" :title="t('settings.dialogs.migrationTitle')" style="width: 500px">
+    <n-modal v-model:show="showConfirm" preset="dialog" :title="t('settings.dialogs.migrationTitle')" class="settings-dialog">
       <div class="modal-content">
         <p>{{ t('settings.dialogs.migrationDesc') }}</p>
         <div class="path-compare old">{{ currentPath }}</div>
@@ -675,6 +831,7 @@ onMounted(init)
   font-weight: 700;
   letter-spacing: 0.04em;
 }
+
 .path-body {
   padding: 20px;
   font-family: 'JetBrains Mono', monospace;
@@ -737,6 +894,50 @@ onMounted(init)
 .m-title { font-weight: bold; font-size: 15px; color: var(--text-primary); margin-bottom: 5px; }
 .m-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
 
+.diagnostic-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.database-diagnostic { margin-top: 12px; background: var(--bg-sidebar); }
+.diagnostic-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.asset-selection { margin-top: 14px; }
+.asset-selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border-main);
+}
+.asset-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+.asset-size { color: var(--text-tertiary); font-size: 11px; }
+.list-limit-hint { margin-top: 8px; color: var(--text-tertiary); font-size: 11px; }
+
 .footer-area { margin-top: 60px; padding-top: 20px; }
 .dev-card {
   display: flex; justify-content: space-between; align-items: center;
@@ -780,4 +981,46 @@ onMounted(init)
 .path-compare.new { color: #0A84FF; border: 1px solid rgba(10, 132, 255, 0.3); }
 .arrow { text-align: center; margin: 5px 0; opacity: 0.5; color: var(--text-tertiary); }
 .warning { color: #f2c97d; font-size: 12px; margin-top: 15px; }
+
+:deep(.settings-dialog) {
+  width: min(500px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+@media (max-width: 720px) {
+  .settings-page {
+    padding: 28px 24px;
+  }
+
+  .header { margin-bottom: 28px; }
+  .title { font-size: 28px; }
+  .form-grid,
+  .maintenance-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-item.full-width { grid-column: auto; }
+  .backup-header,
+  .dev-card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .dev-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 460px) {
+  .settings-page { padding: 20px 16px; }
+  .ui-panel,
+  .backup-panel { padding: 18px; }
+  .path-body { padding: 16px; font-size: 12px; }
+  .stat-row { flex-direction: column; gap: 14px; }
+  .diagnostic-line {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
 </style>

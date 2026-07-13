@@ -218,8 +218,8 @@
   },
   "bomEdit": {
     "title": {
-      "edit": "✏️ Edit BOM Project",
-      "create": "🚀 New PCB Project"
+      "edit": "Edit BOM Project",
+      "create": "New BOM Project"
     },
     "form": {
       "namePlaceholder": "Project Name (Required)",
@@ -364,13 +364,13 @@
     "title": "Data Center",
     "export": {
       "title": "Export Data",
-      "desc": "Backup inventory, projects or generate Excel/CSV reports",
+      "desc": "Export shareable business bundles or generate CSV reports",
       "logs": "Export System Logs",
       "logsTitle": "Export Logs"
     },
     "import": {
       "title": "Import Data",
-      "desc": "Click or drag .csv table / .svdata bundle",
+      "desc": "Click or drag a .csv table / .svdata business bundle",
       "csvTemplate": "CSV Template",
       "svdataTemplate": "SVData Template",
       "saveCsvTitle": "Save CSV Import Template"
@@ -389,6 +389,9 @@
       "readPathFailed": "Failed to read file path",
       "unsupportedFormat": "Unsupported file format",
       "bundleParseFailed": "Bundle analysis failed",
+      "unsupportedBundleVersion": "This bundle version is not supported by the current application",
+      "invalidBundleStructure": "Bundle structure or data validation failed; nothing was imported",
+      "unsafeBundlePath": "The bundle contains unsafe file paths and was rejected",
       "importCompleted": "Import completed",
       "csvImportSuccess": "CSV import success"
     }
@@ -509,6 +512,22 @@
       "export": "Data Export",
       "record": "Record"
     },
+    "events": {
+      "manualIn": "Manual Stock In",
+      "manualOut": "Manual Stock Out",
+      "batchAdjust": "Batch Stock Adjustment",
+      "bomDeduction": "BOM Production Deduction",
+      "csvImport": "CSV Import"
+    },
+    "status": {
+      "undone": "Undone",
+      "notUndoable": "Not Undoable"
+    },
+    "details": {
+      "title": "View operation details",
+      "insert": "Insert",
+      "overwrite": "Overwrite"
+    },
     "prefixes": {
       "create": "New",
       "update": "Mod",
@@ -523,14 +542,21 @@
     "messages": {
       "loadFailed": "Failed to load logs",
       "importUndoWarning": "Batch import cannot be undone in a single step",
+      "notUndoable": "This operation is informational and cannot be undone",
+      "alreadyUndone": "This operation has already been undone",
       "undoSuccess": "Undo successful",
-      "undoFailed": "Undo failed: data dependency might be lost"
+      "undoFailed": "Undo failed: data may have changed since the operation or now has dependencies"
     },
     "empty": "No relevant records found"
   },
   "log": {
     "inventory": {
       "stock": "Stock Update: {name} {value} ({old} ➝ {new})",
+      "manualIn": "Manual Stock In: {name} {value} +{qty} ({old} ➝ {new})",
+      "manualOut": "Manual Stock Out: {name} {value} -{qty} ({old} ➝ {new})",
+      "batchAdjust": "Adjusted {count} items (in {inbound}, out {outbound})",
+      "bomDeduction": "BOM Production Deduction: {project}, built {productionQuantity} sets, consumed {total} items",
+      "csvImport": "CSV import completed: {success} succeeded, {skipped} skipped",
       "create": "New Item: {name} {value}",
       "update": "Update Item: {name} {value}",
       "delete": "Delete Item: {name} {value}",
@@ -543,7 +569,8 @@
     },
     "backup": {
       "export": "Export Bundle: {file} ({inv} items, {proj} projects)",
-      "import": "Import Bundle (Session: {session}) - {inv} items, {proj} projects"
+      "import": "Import Bundle (Session: {session}) - {inv} items, {proj} projects",
+      "fullBackup": "Create Full Application Backup: {file}"
     }
   },
   "settings": {
@@ -561,6 +588,12 @@
       "animation": "Transition Animation",
       "animationPlaceholder": "Select Animation",
       "animationDesc": "Controls the visual smoothness and speed of page transitions",
+      "quoteLanguage": "Title Quote Language",
+      "quoteLanguageDesc": "Follow the app language, use atmospheric Chinese lines, or keep the English originals",
+      "quoteLanguagePlaceholder": "Select quote language",
+      "quoteAuto": "Follow App Language",
+      "quoteChinese": "Chinese",
+      "quoteEnglish": "English Originals",
       "fast": "Fast",
       "normal": "Normal",
       "slow": "Elegant (Slow)"
@@ -569,7 +602,7 @@
       "path": "Data Storage Location",
       "changePath": "Migrate Data...",
       "autoBackup": "Auto Backup",
-      "backupDesc": "Periodically backup database to prevent data loss",
+      "backupDesc": "Create a full application backup (.svbackup) containing the database, settings, logs, and all attachments",
       "frequency": "Frequency",
       "maxFiles": "Retain Count",
       "freqExit": "On Exit",
@@ -600,7 +633,18 @@
       "freedSpace": "Reclaimable Space",
       "warning": "These files are not referenced by any component or project. Deletion cannot be undone.",
       "success": "Great! Your data storage is very clean, no redundant files found.",
-      "cleanNow": "Clean Now"
+      "cleanNow": "Clean Selected",
+      "scannedFiles": "Scanned {count} files",
+      "references": "{count} database references",
+      "missingFiles": "{count} missing assets",
+      "invalidReferences": "{count} invalid references",
+      "databaseIntegrity": "Database integrity",
+      "foreignKeyIssues": "Foreign-key issues",
+      "reclaimableDatabase": "Reclaimable database space",
+      "selected": "Selected {selected}/{total}",
+      "selectAll": "Select all",
+      "selectNone": "Select none",
+      "listLimited": "Only the first {count} entries are displayed; Select all still includes every entry"
     },
     "dialogs": {
       "migrationTitle": "⚠️ Migration Confirmation",
@@ -612,8 +656,18 @@
       "langChanged": "Language Changed",
       "saved": "Settings saved",
       "pathSelected": "New path selected",
-      "vacuumSuccess": "Database optimized successfully",
+      "vacuumSuccess": "Database optimized: reclaimed {size}, removed {orphans} orphan links",
+      "cleanSuccess": "Removed {files} files, freed {size}, and removed {dirs} empty folders",
       "opFailed": "Operation failed",
+      "invalidStoragePath": "Choose a valid data directory; filesystem roots are not allowed",
+      "sameStoragePath": "The new directory is the same as the current data directory",
+      "nestedStoragePath": "The old and new data directories cannot contain each other",
+      "storageTargetNotEmpty": "The target directory must be empty",
+      "insufficientStorageSpace": "The target disk does not have enough space for a safe migration",
+      "storageSymlinkRejected": "A symbolic link was found in storage, so migration was stopped to prevent path escape",
+      "storageIntegrityFailed": "The migrated database failed integrity validation; the active path was not changed",
+      "backupPathInsideAssets": "The backup folder cannot be inside the business assets folder because that would cause recursive backup growth",
+      "invalidBackupSettings": "The backup settings are invalid and were restored to the last saved values",
       "resetSuccess": "System reset successfully"
     }
   },

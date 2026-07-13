@@ -25,93 +25,49 @@ import {
   ensureDevelopmentStoragePath,
   isDevelopmentStorageMode
 } from './environment'
+import { normalizeFilesystemPath } from './path-security'
+import type {
+  AppSettings,
+  BomItem,
+  BomProject,
+  CategoryRule,
+  DeductionContext,
+  DeductionItem,
+  FilterOptions,
+  ImportStrategy,
+  InventoryHealthStats,
+  InventoryImportItem,
+  InventoryItem,
+  NewOperationLog,
+  OperationEventCode,
+  OperationLog,
+  QuantityUpdate,
+  StoredInventoryItem
+} from '../shared/types'
+export type {
+  AppSettings,
+  BomItem,
+  BomProject,
+  CategoryRule,
+  DeductionContext,
+  FilterOptions,
+  ImportStrategy,
+  InventoryHealthStats,
+  InventoryItem,
+  OperationEventCode,
+  OperationLog,
+  QuantityUpdate
+} from '../shared/types'
 
-// --- 类型定义 ---
-
-export interface InventoryItem {
-  id?: number
-  category: string
+interface StockLogDetail {
+  inventory_id: number
   name: string
   value: string
+  category: string
   package: string
-  quantity: number
-  location: string
-  min_stock?: number
-  image_paths?: string 
-  datasheet_paths?: string
-  ref_count?: number
-}
-
-export interface BomProject {
-  id?: number
-  name: string
-  description: string
-  created_at?: string
-  items?: BomItem[]
-  order_index?: number
-  files?: string
-}
-
-export interface BomItem {
-  inventory_id: number
-  quantity: number
-  name?: string
-  value?: string
-  package?: string
-  category?: string 
-  current_stock?: number
-}
-
-export interface FilterOptions {
-  keyword?: string
-  category?: string
-  package?: string
-}
-
-export interface CategoryLayout {
-  topLeft: string
-  topRight: string
-  bottomLeft: string
-  bottomRight: string
-}
-
-export interface CategoryRule {
-  nameLabel: string
-  namePlaceholder: string
-  valueLabel: string
-  valuePlaceholder: string
-  packageLabel: string
-  layout?: CategoryLayout
-}
-
-export interface OperationLog {
-  id?: number
-  op_type: 'CREATE' | 'UPDATE' | 'DELETE' | 'STOCK' | 'IMPORT' | 'EXPORT'
-  target_type: 'INVENTORY' | 'PROJECT'
-  target_id: number
-  desc: string
-  old_data?: string
-  new_data?: string
-  created_at?: string
-}
-
-export interface AppSettings {
-  autoBackup: boolean
-  backupFrequency: 'exit' | '30min' | '1h' | '4h'
-  backupPath: string
-  maxBackups: number
-}
-
-export type ImportStrategy = 'skip' | 'overwrite' | 'keep_both'
-
-export interface QuantityUpdate {
-  id: number
-  qty: number
-}
-
-interface DeductionItem {
-  id: number
-  deductQty: number
+  before: number
+  after: number
+  delta: number
 }
 
 // 更改为英文默认值，适应国际化新用户
@@ -183,16 +139,17 @@ const GENERIC_RULE: CategoryRule = {
 export class DBManager {
   private db: Database.Database
   private userDataPath: string
+  private categoryRulesCache: Record<string, CategoryRule> | null = null
 
   constructor(storagePathOverride?: string) {
     if (storagePathOverride) {
-      this.userDataPath = path.resolve(storagePathOverride)
+      this.userDataPath = normalizeFilesystemPath(storagePathOverride)
     } else if (isDevelopmentStorageMode()) {
       this.userDataPath = ensureDevelopmentStoragePath()
     } else {
       const store = new Store()
       const defaultPath = path.join(app.getPath('documents'), 'SiliconVault')
-      this.userDataPath = (store.get('storagePath') as string) || defaultPath
+      this.userDataPath = normalizeFilesystemPath((store.get('storagePath') as string) || defaultPath)
     }
 
     if (!fs.existsSync(this.userDataPath)) {
@@ -207,7 +164,8 @@ export class DBManager {
       }
     }
 
-    const dbPath = path.join(this.userDataPath, 'inventory.db')
+    this.userDataPath = normalizeFilesystemPath(this.userDataPath)
+    const dbPath = normalizeFilesystemPath(path.join(this.userDataPath, 'inventory.db'))
     this.db = new Database(dbPath)
     this.db.pragma('foreign_keys = ON')
 
@@ -271,6 +229,12 @@ export class DBManager {
         op_type TEXT, 
         target_type TEXT, 
         target_id INTEGER, 
+        event_code TEXT,
+        summary_key TEXT,
+        summary_params TEXT,
+        details TEXT,
+        undoable INTEGER DEFAULT 0,
+        undone_at DATETIME,
         desc TEXT, 
         old_data TEXT, 
         new_data TEXT, 
@@ -312,31 +276,113 @@ export class DBManager {
         this.db.prepare("ALTER TABLE projects ADD COLUMN files TEXT").run()
       }
 
+      const logColumns = this.db.prepare("PRAGMA table_info(operation_logs)").all() as any[]
+      const logColumnNames = logColumns.map(c => c.name)
+      const logMigrations = [
+        ['event_code', 'TEXT'],
+        ['summary_key', 'TEXT'],
+        ['summary_params', 'TEXT'],
+        ['details', 'TEXT'],
+        ['undoable', 'INTEGER DEFAULT 0'],
+        ['undone_at', 'DATETIME']
+      ] as const
+
+      for (const [name, definition] of logMigrations) {
+        if (!logColumnNames.includes(name)) {
+          this.db.prepare(`ALTER TABLE operation_logs ADD COLUMN ${name} ${definition}`).run()
+        }
+      }
+
+      this.migrateLegacyOperationLogs()
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_operation_logs_event_time
+        ON operation_logs(event_code, created_at);
+        CREATE INDEX IF NOT EXISTS idx_operation_logs_undo_state
+        ON operation_logs(undoable, undone_at);
+      `)
+
     } catch (e) {
       console.error('数据库结构迁移失败', e)
     }
   }
 
-  public addLog(log: OperationLog) {
+  private migrateLegacyOperationLogs() {
+    const rows = this.db.prepare(`
+      SELECT * FROM operation_logs
+      WHERE event_code IS NULL OR event_code = ''
+    `).all() as OperationLog[]
+    if (rows.length === 0) return
+
+    const update = this.db.prepare(`
+      UPDATE operation_logs
+      SET event_code = ?, summary_key = ?, summary_params = ?, undoable = ?
+      WHERE id = ?
+    `)
+
+    const tx = this.db.transaction(() => {
+      for (const row of rows) {
+        let summaryKey = ''
+        let summaryParams = '{}'
+        try {
+          const parsed = row.desc ? JSON.parse(row.desc) : null
+          if (parsed?.key) {
+            summaryKey = parsed.key
+            summaryParams = JSON.stringify(parsed.params || {})
+          }
+        } catch {
+          summaryKey = ''
+        }
+
+        let eventCode: OperationEventCode = 'LEGACY'
+        if (summaryKey === 'log.inventory.deduct' || row.desc?.includes('生产扣减')) {
+          eventCode = 'BOM_PRODUCTION_DEDUCTION'
+        } else if (summaryKey === 'log.inventory.stock' || row.op_type === 'STOCK') {
+          const delta = this.getSnapshotQuantityDelta(row)
+          eventCode = delta >= 0 ? 'INVENTORY_MANUAL_IN' : 'INVENTORY_MANUAL_OUT'
+        } else if (summaryKey === 'log.inventory.create') eventCode = 'INVENTORY_CREATE'
+        else if (summaryKey === 'log.inventory.update') eventCode = 'INVENTORY_UPDATE'
+        else if (summaryKey === 'log.inventory.delete') eventCode = 'INVENTORY_DELETE'
+        else if (summaryKey === 'log.project.create') eventCode = 'PROJECT_CREATE'
+        else if (summaryKey === 'log.project.update') eventCode = 'PROJECT_UPDATE'
+        else if (summaryKey === 'log.project.delete') eventCode = 'PROJECT_DELETE'
+        else if (summaryKey === 'log.backup.import' || row.op_type === 'IMPORT') eventCode = 'BUNDLE_IMPORT'
+        else if (summaryKey === 'log.backup.export' || row.op_type === 'EXPORT') eventCode = 'BUNDLE_EXPORT'
+
+        const undoable = ['CREATE', 'UPDATE', 'DELETE', 'STOCK'].includes(row.op_type) ? 1 : 0
+        update.run(eventCode, summaryKey || null, summaryParams, undoable, row.id)
+      }
+    })
+    tx()
+  }
+
+  public addLog(log: NewOperationLog): number {
     const safeLog = {
       op_type: log.op_type,
       target_type: log.target_type,
       target_id: log.target_id,
-      desc: log.desc,
+      event_code: log.event_code || 'LEGACY',
+      summary_key: log.summary_key || null,
+      summary_params: log.summary_params || null,
+      details: log.details || null,
+      undoable: log.undoable ? 1 : 0,
+      desc: log.desc || null,
       old_data: log.old_data || null, 
       new_data: log.new_data || null,
     }
 
-    try {
-      this.db.prepare(`
-        INSERT INTO operation_logs (op_type, target_type, target_id, desc, old_data, new_data)
-        VALUES (@op_type, @target_type, @target_id, @desc, @old_data, @new_data)
-      `).run(safeLog)
+    const info = this.db.prepare(`
+      INSERT INTO operation_logs (
+        op_type, target_type, target_id, event_code, summary_key, summary_params,
+        details, undoable, desc, old_data, new_data
+      )
+      VALUES (
+        @op_type, @target_type, @target_id, @event_code, @summary_key, @summary_params,
+        @details, @undoable, @desc, @old_data, @new_data
+      )
+    `).run(safeLog)
 
-      this.db.exec(`DELETE FROM operation_logs WHERE id NOT IN (SELECT id FROM operation_logs ORDER BY id DESC LIMIT 1000)`)
-    } catch (e) {
-      console.error('日志写入失败:', e)
-    }
+    this.db.exec(`DELETE FROM operation_logs WHERE id NOT IN (SELECT id FROM operation_logs ORDER BY id DESC LIMIT 1000)`)
+    return Number(info.lastInsertRowid)
   }
 
   public getLogs(): OperationLog[] {
@@ -344,64 +390,322 @@ export class DBManager {
   }
 
   public undoOperation(logId: number) {
+    this.assertPositiveInteger(logId, 'logId')
     const log = this.db.prepare("SELECT * FROM operation_logs WHERE id = ?").get(logId) as OperationLog
     if (!log) throw new Error('日志不存在')
+    if (!log.undoable) throw new Error('UNDO_NOT_SUPPORTED')
+    if (log.undone_at) throw new Error('ALREADY_UNDONE')
 
     const undoTx = this.db.transaction(() => {
-      const oldData = log.old_data ? JSON.parse(log.old_data) : null
-
-      if (log.op_type === 'CREATE') {
-        if (log.target_type === 'INVENTORY') {
-          this.db.prepare("DELETE FROM inventory WHERE id = ?").run(log.target_id)
-        } else if (log.target_type === 'PROJECT') {
-          this.db.prepare("DELETE FROM project_items WHERE project_id = ?").run(log.target_id)
-          this.db.prepare("DELETE FROM projects WHERE id = ?").run(log.target_id)
-        }
-      } 
-      else if (log.op_type === 'DELETE') {
-        if (log.target_type === 'INVENTORY') {
-          this.db.prepare(`
-            INSERT OR REPLACE INTO inventory (id, category, name, value, package, quantity, location, min_stock, image_paths, datasheet_paths)
-            VALUES (@id, @category, @name, @value, @package, @quantity, @location, @min_stock, @image_paths, @datasheet_paths)
-          `).run(oldData)
-        } else if (log.target_type === 'PROJECT') {
-          this.db.prepare(`
-            INSERT OR REPLACE INTO projects (id, name, description, created_at, order_index, files)
-            VALUES (@id, @name, @description, @created_at, @order_index, @files)
-          `).run({ ...oldData.project, files: oldData.project.files || '[]' })
-          
-          const insertItem = this.db.prepare("INSERT INTO project_items (project_id, inventory_id, quantity) VALUES (?, ?, ?)")
-          for (const item of oldData.items) {
-            insertItem.run(oldData.project.id, item.inventory_id, item.quantity)
-          }
-        }
-      }
-      else if (log.op_type === 'UPDATE' || log.op_type === 'STOCK') {
-        if (log.target_type === 'INVENTORY') {
-          const exist = this.db.prepare("SELECT id FROM inventory WHERE id = ?").get(log.target_id)
-          if (exist) {
-            this.db.prepare(`
-              UPDATE inventory 
-              SET category=@category, name=@name, value=@value, package=@package, quantity=@quantity, location=@location, min_stock=@min_stock, image_paths=@image_paths, datasheet_paths=@datasheet_paths
-              WHERE id=@id
-            `).run(oldData)
-          }
-        } else if (log.target_type === 'PROJECT') {
-          this.db.prepare("UPDATE projects SET name = ?, description = ?, files = ? WHERE id = ?")
-            .run(oldData.project.name, oldData.project.description, oldData.project.files || '[]', log.target_id)
-          
-          this.db.prepare("DELETE FROM project_items WHERE project_id = ?").run(log.target_id)
-          const insertItem = this.db.prepare("INSERT INTO project_items (project_id, inventory_id, quantity) VALUES (?, ?, ?)")
-          for (const item of oldData.items) {
-            insertItem.run(log.target_id, item.inventory_id, item.quantity)
-          }
-        }
+      switch (log.event_code) {
+        case 'INVENTORY_MANUAL_IN':
+        case 'INVENTORY_MANUAL_OUT':
+        case 'INVENTORY_BATCH_ADJUST':
+        case 'BOM_PRODUCTION_DEDUCTION':
+          this.undoStockLog(log)
+          break
+        case 'CSV_IMPORT':
+          this.undoCsvImport(log)
+          break
+        case 'INVENTORY_CREATE':
+          this.undoInventoryCreate(log)
+          break
+        case 'INVENTORY_DELETE':
+          this.restoreDeletedInventory(log)
+          break
+        case 'INVENTORY_UPDATE':
+          this.restoreUpdatedInventory(log)
+          break
+        case 'PROJECT_CREATE':
+          this.undoProjectCreate(log)
+          break
+        case 'PROJECT_DELETE':
+          this.restoreDeletedProject(log)
+          break
+        case 'PROJECT_UPDATE':
+          this.restoreUpdatedProject(log)
+          break
+        default:
+          this.undoLegacyLog(log)
       }
 
-      this.db.prepare("DELETE FROM operation_logs WHERE id = ?").run(logId)
+      this.db.prepare("UPDATE operation_logs SET undone_at = CURRENT_TIMESTAMP WHERE id = ?").run(logId)
     })
 
     undoTx()
+  }
+
+  private parseLogJson<T>(value?: string | null): T | null {
+    if (!value) return null
+    try {
+      return JSON.parse(value) as T
+    } catch {
+      return null
+    }
+  }
+
+  private getSnapshotQuantityDelta(log: OperationLog): number {
+    const oldData = this.parseLogJson<any>(log.old_data)
+    const newData = this.parseLogJson<any>(log.new_data)
+    const oldQty = Number(oldData?.quantity)
+    const newQty = Number(newData?.quantity)
+    if (!Number.isFinite(oldQty) || !Number.isFinite(newQty)) return 0
+    return newQty - oldQty
+  }
+
+  private getStockLogDetails(log: OperationLog): StockLogDetail[] {
+    const payload = this.parseLogJson<{ items?: StockLogDetail[] }>(log.details)
+    if (Array.isArray(payload?.items)) return payload.items
+
+    const oldData = this.parseLogJson<any>(log.old_data)
+    const newData = this.parseLogJson<any>(log.new_data)
+    if (!oldData || !newData) return []
+    return [{
+      inventory_id: log.target_id,
+      name: oldData.name || '',
+      value: oldData.value || '',
+      category: oldData.category || '',
+      package: oldData.package || '',
+      before: Number(oldData.quantity) || 0,
+      after: Number(newData.quantity) || 0,
+      delta: (Number(newData.quantity) || 0) - (Number(oldData.quantity) || 0)
+    }]
+  }
+
+  private undoStockLog(log: OperationLog) {
+    const details = this.getStockLogDetails(log)
+    if (details.length === 0) throw new Error('UNDO_DATA_MISSING')
+
+    const oldSnapshot = this.parseLogJson<any>(log.old_data)
+    const newSnapshot = this.parseLogJson<any>(log.new_data)
+    const rows = details.map(detail => {
+      const current = this.db.prepare("SELECT * FROM inventory WHERE id = ?")
+        .get(detail.inventory_id) as any
+      if (!current) throw new Error(`UNDO_CONFLICT:inventory ${detail.inventory_id} is missing`)
+      if (
+        details.length === 1 &&
+        oldSnapshot &&
+        newSnapshot &&
+        !this.inventoryMetadataEqual(current, newSnapshot)
+      ) {
+        throw new Error(`UNDO_CONFLICT:inventory ${detail.inventory_id} metadata changed`)
+      }
+      const restoredQuantity = current.quantity - detail.delta
+      if (!Number.isInteger(restoredQuantity) || restoredQuantity < 0) {
+        throw new Error(`UNDO_CONFLICT:inventory ${detail.inventory_id} has insufficient stock`)
+      }
+      return { id: detail.inventory_id, quantity: restoredQuantity }
+    })
+
+    const update = this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?")
+    for (const row of rows) {
+      if (details.length === 1 && oldSnapshot && newSnapshot) {
+        this.writeInventorySnapshot({ ...oldSnapshot, quantity: row.quantity })
+      } else {
+        update.run(row.quantity, row.id)
+      }
+    }
+  }
+
+  private undoCsvImport(log: OperationLog) {
+    const payload = this.parseLogJson<{
+      changes?: Array<{ action: 'insert' | 'overwrite'; id: number; before: any | null; after: any }>
+    }>(log.details)
+    const changes = payload?.changes
+    if (!Array.isArray(changes) || changes.length === 0) throw new Error('UNDO_DATA_MISSING')
+
+    for (const change of [...changes].reverse()) {
+      const current = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(change.id) as any
+      if (!current || !this.inventorySnapshotsEqual(current, change.after)) {
+        throw new Error(`UNDO_CONFLICT:inventory ${change.id} changed after import`)
+      }
+
+      if (change.action === 'insert') {
+        const dependency = this.db.prepare("SELECT 1 FROM project_items WHERE inventory_id = ? LIMIT 1")
+          .get(change.id)
+        if (dependency) throw new Error(`UNDO_CONFLICT:inventory ${change.id} is referenced`)
+        this.db.prepare("DELETE FROM inventory WHERE id = ?").run(change.id)
+      } else {
+        this.writeInventorySnapshot(change.before)
+      }
+    }
+  }
+
+  private undoInventoryCreate(log: OperationLog) {
+    const expected = this.parseLogJson<any>(log.new_data)
+    const current = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(log.target_id) as any
+    if (!current || !expected || !this.inventorySnapshotsEqual(current, expected)) {
+      throw new Error('UNDO_CONFLICT:inventory changed after creation')
+    }
+    const dependency = this.db.prepare("SELECT 1 FROM project_items WHERE inventory_id = ? LIMIT 1")
+      .get(log.target_id)
+    if (dependency) throw new Error('UNDO_CONFLICT:inventory is referenced')
+    this.db.prepare("DELETE FROM inventory WHERE id = ?").run(log.target_id)
+  }
+
+  private restoreDeletedInventory(log: OperationLog) {
+    const snapshot = this.parseLogJson<any>(log.old_data)
+    if (!snapshot) throw new Error('UNDO_DATA_MISSING')
+    if (this.db.prepare("SELECT 1 FROM inventory WHERE id = ?").get(log.target_id)) {
+      throw new Error('UNDO_CONFLICT:inventory id already exists')
+    }
+    this.writeInventorySnapshot(snapshot)
+  }
+
+  private restoreUpdatedInventory(log: OperationLog) {
+    const oldSnapshot = this.parseLogJson<any>(log.old_data)
+    const newSnapshot = this.parseLogJson<any>(log.new_data)
+    const current = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(log.target_id) as any
+    if (!oldSnapshot || !newSnapshot || !current || !this.inventorySnapshotsEqual(current, newSnapshot)) {
+      throw new Error('UNDO_CONFLICT:inventory changed after update')
+    }
+    this.writeInventorySnapshot(oldSnapshot)
+  }
+
+  private undoProjectCreate(log: OperationLog) {
+    const current = this.getProjectSnapshot(log.target_id)
+    const expected = this.parseLogJson<any>(log.new_data)
+    if (!current || !expected || !this.projectSnapshotsEqual(current, expected)) {
+      throw new Error('UNDO_CONFLICT:project changed after creation')
+    }
+    this.db.prepare("DELETE FROM projects WHERE id = ?").run(log.target_id)
+  }
+
+  private restoreDeletedProject(log: OperationLog) {
+    const snapshot = this.parseLogJson<any>(log.old_data)
+    if (!snapshot?.project) throw new Error('UNDO_DATA_MISSING')
+    if (this.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(log.target_id)) {
+      throw new Error('UNDO_CONFLICT:project id already exists')
+    }
+    this.writeProjectSnapshot(snapshot)
+  }
+
+  private restoreUpdatedProject(log: OperationLog) {
+    const oldSnapshot = this.parseLogJson<any>(log.old_data)
+    const newSnapshot = this.parseLogJson<any>(log.new_data)
+    const current = this.getProjectSnapshot(log.target_id)
+    if (!oldSnapshot || !newSnapshot || !current || !this.projectSnapshotsEqual(current, newSnapshot)) {
+      throw new Error('UNDO_CONFLICT:project changed after update')
+    }
+    this.writeProjectSnapshot(oldSnapshot)
+  }
+
+  private undoLegacyLog(log: OperationLog) {
+    const oldData = this.parseLogJson<any>(log.old_data)
+    if (log.op_type === 'STOCK') {
+      this.undoStockLog(log)
+    } else if (log.op_type === 'CREATE' && log.target_type === 'INVENTORY') {
+      this.undoInventoryCreate(log)
+    } else if (log.op_type === 'CREATE' && log.target_type === 'PROJECT') {
+      this.undoProjectCreate(log)
+    } else if (log.op_type === 'DELETE' && log.target_type === 'INVENTORY') {
+      this.restoreDeletedInventory(log)
+    } else if (log.op_type === 'DELETE' && log.target_type === 'PROJECT') {
+      this.restoreDeletedProject(log)
+    } else if (log.op_type === 'UPDATE' && log.target_type === 'INVENTORY') {
+      this.restoreUpdatedInventory(log)
+    } else if (log.op_type === 'UPDATE' && log.target_type === 'PROJECT') {
+      this.restoreUpdatedProject(log)
+    } else if (!oldData) {
+      throw new Error('UNDO_NOT_SUPPORTED')
+    }
+  }
+
+  private writeInventorySnapshot(snapshot: any) {
+    this.db.prepare(`
+      INSERT INTO inventory (id, category, name, value, package, quantity, location, min_stock, image_paths, datasheet_paths)
+      VALUES (@id, @category, @name, @value, @package, @quantity, @location, @min_stock, @image_paths, @datasheet_paths)
+      ON CONFLICT(id) DO UPDATE SET
+        category=excluded.category,
+        name=excluded.name,
+        value=excluded.value,
+        package=excluded.package,
+        quantity=excluded.quantity,
+        location=excluded.location,
+        min_stock=excluded.min_stock,
+        image_paths=excluded.image_paths,
+        datasheet_paths=excluded.datasheet_paths
+    `).run({
+      ...snapshot,
+      image_paths: snapshot.image_paths || '[]',
+      datasheet_paths: snapshot.datasheet_paths || '[]'
+    })
+  }
+
+  private inventorySnapshotsEqual(left: any, right: any): boolean {
+    const fields = [
+      'id', 'category', 'name', 'value', 'package', 'quantity',
+      'location', 'min_stock', 'image_paths', 'datasheet_paths'
+    ]
+    return fields.every(field => {
+      const leftValue = left?.[field] ?? (field.endsWith('_paths') ? '[]' : '')
+      const rightValue = right?.[field] ?? (field.endsWith('_paths') ? '[]' : '')
+      return leftValue === rightValue
+    })
+  }
+
+  private inventoryMetadataEqual(left: any, right: any): boolean {
+    const fields = [
+      'id', 'category', 'name', 'value', 'package',
+      'location', 'min_stock', 'image_paths', 'datasheet_paths'
+    ]
+    return fields.every(field => {
+      const leftValue = left?.[field] ?? (field.endsWith('_paths') ? '[]' : '')
+      const rightValue = right?.[field] ?? (field.endsWith('_paths') ? '[]' : '')
+      return leftValue === rightValue
+    })
+  }
+
+  private getProjectSnapshot(projectId: number) {
+    const project = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as any
+    if (!project) return null
+    const items = this.db.prepare(`
+      SELECT project_id, inventory_id, quantity
+      FROM project_items WHERE project_id = ?
+      ORDER BY inventory_id ASC
+    `).all(projectId)
+    return { project, items }
+  }
+
+  private writeProjectSnapshot(snapshot: any) {
+    const project = snapshot.project
+    this.db.prepare(`
+      INSERT INTO projects (id, name, description, created_at, order_index, files)
+      VALUES (@id, @name, @description, @created_at, @order_index, @files)
+      ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name,
+        description=excluded.description,
+        created_at=excluded.created_at,
+        order_index=excluded.order_index,
+        files=excluded.files
+    `).run({ ...project, files: project.files || '[]' })
+
+    this.db.prepare("DELETE FROM project_items WHERE project_id = ?").run(project.id)
+    const insert = this.db.prepare(
+      "INSERT INTO project_items (project_id, inventory_id, quantity) VALUES (?, ?, ?)"
+    )
+    for (const item of snapshot.items || []) {
+      insert.run(project.id, item.inventory_id, item.quantity)
+    }
+  }
+
+  private projectSnapshotsEqual(left: any, right: any): boolean {
+    const leftProject = left?.project || left
+    const rightProject = right?.project || right
+    const projectFields = ['id', 'name', 'description', 'created_at', 'order_index', 'files']
+    const projectEqual = projectFields.every(field => {
+      if (rightProject?.[field] === undefined || rightProject?.[field] === null) return true
+      return (leftProject?.[field] ?? (field === 'files' ? '[]' : '')) === rightProject[field]
+    })
+    if (!projectEqual) return false
+
+    const normalizeItems = (items: any[] = []) => items
+      .map(item => ({
+        inventory_id: item.inventory_id,
+        quantity: item.quantity
+      }))
+      .sort((a, b) => a.inventory_id - b.inventory_id)
+    return JSON.stringify(normalizeItems(left?.items)) === JSON.stringify(normalizeItems(right?.items))
   }
 
   public fetchCategories(): string[] {
@@ -485,6 +789,30 @@ export class DBManager {
     return grouped
   }
 
+  public getInventoryHealthStats(): InventoryHealthStats {
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(CASE WHEN quantity <= 0 THEN 1 ELSE 0 END), 0) AS out_of_stock,
+        COALESCE(SUM(
+          CASE
+            WHEN quantity > 0 AND quantity <= COALESCE(min_stock, 10) THEN 1
+            ELSE 0
+          END
+        ), 0) AS low_stock
+      FROM inventory
+    `).get() as { total: number; out_of_stock: number; low_stock: number }
+
+    const outOfStock = Number(row.out_of_stock) || 0
+    const lowStock = Number(row.low_stock) || 0
+    return {
+      total: Number(row.total) || 0,
+      outOfStock,
+      lowStock,
+      warningLevel: outOfStock > 0 ? 2 : lowStock > 0 ? 1 : 0
+    }
+  }
+
   public updateQty(id: number, qty: number) {
     this.assertPositiveInteger(id, 'id')
     this.assertNonNegativeInteger(qty, 'qty')
@@ -492,18 +820,39 @@ export class DBManager {
     const tx = this.db.transaction(() => {
       const oldItem = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(id) as any
       if (!oldItem) throw new Error(`NOT_FOUND:inventory ${id}`)
+      if (oldItem.quantity === qty) return
 
       this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?").run(qty, id)
+      const delta = qty - oldItem.quantity
+      const eventCode: OperationEventCode = delta > 0
+        ? 'INVENTORY_MANUAL_IN'
+        : 'INVENTORY_MANUAL_OUT'
+      const detail: StockLogDetail = {
+        inventory_id: id,
+        name: oldItem.name || '',
+        value: oldItem.value || '',
+        category: oldItem.category || '',
+        package: oldItem.package || '',
+        before: oldItem.quantity,
+        after: qty,
+        delta
+      }
 
-      // 使用 JSON 结构化日志
       this.addLog({
         op_type: 'STOCK',
         target_type: 'INVENTORY',
         target_id: id,
-        desc: JSON.stringify({ 
-          key: 'log.inventory.stock', 
-          params: { name: oldItem.name, value: oldItem.value, old: oldItem.quantity, new: qty } 
+        event_code: eventCode,
+        summary_key: delta > 0 ? 'log.inventory.manualIn' : 'log.inventory.manualOut',
+        summary_params: JSON.stringify({
+          name: oldItem.name,
+          value: oldItem.value,
+          qty: Math.abs(delta),
+          old: oldItem.quantity,
+          new: qty
         }),
+        details: JSON.stringify({ items: [detail] }),
+        undoable: 1,
         old_data: JSON.stringify(oldItem),
         new_data: JSON.stringify({ ...oldItem, quantity: qty })
       })
@@ -535,23 +884,52 @@ export class DBManager {
         return { update, oldItem }
       })
 
+      const details: StockLogDetail[] = []
       for (const { update, oldItem } of oldItems) {
+        if (update.qty === oldItem.quantity) continue
         updateStmt.run(update.qty, update.id)
+        details.push({
+          inventory_id: update.id,
+          name: oldItem.name || '',
+          value: oldItem.value || '',
+          category: oldItem.category || '',
+          package: oldItem.package || '',
+          before: oldItem.quantity,
+          after: update.qty,
+          delta: update.qty - oldItem.quantity
+        })
+      }
+
+      if (details.length > 0) {
+        const inbound = details.filter(item => item.delta > 0).reduce((sum, item) => sum + item.delta, 0)
+        const outbound = details.filter(item => item.delta < 0).reduce((sum, item) => sum + Math.abs(item.delta), 0)
+        const singleDetail = details.length === 1 ? details[0] : null
+        const eventCode: OperationEventCode = singleDetail
+          ? singleDetail.delta > 0
+            ? 'INVENTORY_MANUAL_IN'
+            : 'INVENTORY_MANUAL_OUT'
+          : 'INVENTORY_BATCH_ADJUST'
         this.addLog({
           op_type: 'STOCK',
           target_type: 'INVENTORY',
-          target_id: update.id,
-          desc: JSON.stringify({
-            key: 'log.inventory.stock',
-            params: {
-              name: oldItem.name,
-              value: oldItem.value,
-              old: oldItem.quantity,
-              new: update.qty
-            }
-          }),
-          old_data: JSON.stringify(oldItem),
-          new_data: JSON.stringify({ ...oldItem, quantity: update.qty })
+          target_id: singleDetail?.inventory_id || 0,
+          event_code: eventCode,
+          summary_key: singleDetail
+            ? singleDetail.delta > 0
+              ? 'log.inventory.manualIn'
+              : 'log.inventory.manualOut'
+            : 'log.inventory.batchAdjust',
+          summary_params: JSON.stringify(singleDetail
+            ? {
+                name: singleDetail.name,
+                value: singleDetail.value,
+                qty: Math.abs(singleDetail.delta),
+                old: singleDetail.before,
+                new: singleDetail.after
+              }
+            : { count: details.length, inbound, outbound }),
+          details: JSON.stringify({ items: details, inbound, outbound }),
+          undoable: 1
         })
       }
     })
@@ -582,10 +960,10 @@ export class DBManager {
         op_type: 'DELETE',
         target_type: 'INVENTORY',
         target_id: id,
-        desc: JSON.stringify({
-          key: 'log.inventory.delete',
-          params: { name: oldItem.name, value: oldItem.value }
-        }),
+        event_code: 'INVENTORY_DELETE',
+        summary_key: 'log.inventory.delete',
+        summary_params: JSON.stringify({ name: oldItem.name, value: oldItem.value }),
+        undoable: 1,
         old_data: JSON.stringify(oldItem)
       })
     })
@@ -610,24 +988,87 @@ export class DBManager {
           WHERE id=@id
         `).run({ ...data, min_stock: minStock, image_paths: imgPaths, datasheet_paths: docPaths })
 
+        const newItem = this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(data.id) as any
+        const quantityDelta = newItem.quantity - oldItem.quantity
+        const eventCode: OperationEventCode = quantityDelta > 0
+          ? 'INVENTORY_MANUAL_IN'
+          : quantityDelta < 0
+            ? 'INVENTORY_MANUAL_OUT'
+            : 'INVENTORY_UPDATE'
+        const details = quantityDelta === 0 ? undefined : JSON.stringify({
+          items: [{
+            inventory_id: data.id,
+            name: newItem.name || '',
+            value: newItem.value || '',
+            category: newItem.category || '',
+            package: newItem.package || '',
+            before: oldItem.quantity,
+            after: newItem.quantity,
+            delta: quantityDelta
+          } satisfies StockLogDetail]
+        })
+
         this.addLog({
-          op_type: 'UPDATE',
+          op_type: quantityDelta === 0 ? 'UPDATE' : 'STOCK',
           target_type: 'INVENTORY',
           target_id: data.id,
-          desc: JSON.stringify({
-            key: 'log.inventory.update',
-            params: { name: data.name, value: data.value }
+          event_code: eventCode,
+          summary_key: quantityDelta > 0
+            ? 'log.inventory.manualIn'
+            : quantityDelta < 0
+              ? 'log.inventory.manualOut'
+              : 'log.inventory.update',
+          summary_params: JSON.stringify({
+            name: data.name,
+            value: data.value,
+            qty: Math.abs(quantityDelta),
+            old: oldItem.quantity,
+            new: newItem.quantity
           }),
+          details,
+          undoable: 1,
           old_data: JSON.stringify(oldItem),
-          new_data: JSON.stringify({ ...data, min_stock: minStock })
+          new_data: JSON.stringify(newItem)
         })
 
       } else {
-        const existing = this.db.prepare(`SELECT id, quantity FROM inventory WHERE category=? AND name=? AND value=? AND package=? AND location=?`).get(data.category, data.name, data.value, data.package, data.location) as any
+        const existing = this.db.prepare(`SELECT * FROM inventory WHERE category=? AND name=? AND value=? AND package=? AND location=?`).get(data.category, data.name, data.value, data.package, data.location) as any
         
         if (existing) {
            const newQty = existing.quantity + data.quantity
            this.db.prepare("UPDATE inventory SET quantity = ? WHERE id = ?").run(newQty, existing.id)
+           if (data.quantity > 0) {
+             const newItem = { ...existing, quantity: newQty }
+             this.addLog({
+               op_type: 'STOCK',
+               target_type: 'INVENTORY',
+               target_id: existing.id,
+               event_code: 'INVENTORY_MANUAL_IN',
+               summary_key: 'log.inventory.manualIn',
+               summary_params: JSON.stringify({
+                 name: existing.name,
+                 value: existing.value,
+                 qty: data.quantity,
+                 old: existing.quantity,
+                 new: newQty
+               }),
+               details: JSON.stringify({
+                 items: [{
+                   inventory_id: existing.id,
+                   name: existing.name || '',
+                   value: existing.value || '',
+                   category: existing.category || '',
+                   package: existing.package || '',
+                   before: existing.quantity,
+                   after: newQty,
+                   delta: data.quantity
+                 } satisfies StockLogDetail]
+               }),
+               undoable: 1,
+               old_data: JSON.stringify(existing),
+               new_data: JSON.stringify(newItem)
+             })
+           }
         } else {
            const info = this.db.prepare(`
              INSERT INTO inventory (category, name, value, package, quantity, location, min_stock, image_paths, datasheet_paths) 
@@ -640,12 +1081,14 @@ export class DBManager {
              op_type: 'CREATE',
              target_type: 'INVENTORY',
              target_id: newId,
-             desc: JSON.stringify({
-               key: 'log.inventory.create',
-               params: { name: data.name, value: data.value }
-             }),
+             event_code: 'INVENTORY_CREATE',
+             summary_key: 'log.inventory.create',
+             summary_params: JSON.stringify({ name: data.name, value: data.value }),
+             undoable: 1,
              old_data: JSON.stringify(null),
-             new_data: JSON.stringify({ ...data, id: newId, min_stock: minStock })
+             new_data: JSON.stringify(
+               this.db.prepare("SELECT * FROM inventory WHERE id = ?").get(newId)
+             )
            })
         }
       }
@@ -736,16 +1179,17 @@ export class DBManager {
           insertItem.run(pid, item.inventory_id, item.quantity)
         }
 
+        const newSnapshot = this.getProjectSnapshot(pid)
         this.addLog({
           op_type: 'UPDATE',
           target_type: 'PROJECT',
           target_id: pid,
-          desc: JSON.stringify({
-            key: 'log.project.update',
-            params: { name: project.name }
-          }),
+          event_code: 'PROJECT_UPDATE',
+          summary_key: 'log.project.update',
+          summary_params: JSON.stringify({ name: project.name }),
+          undoable: 1,
           old_data: JSON.stringify(oldSnapshot),
-          new_data: JSON.stringify({ project, items: project.items })
+          new_data: JSON.stringify(newSnapshot)
         })
 
       } else {
@@ -760,16 +1204,17 @@ export class DBManager {
           insertItem.run(pid, item.inventory_id, item.quantity)
         }
 
+        const newSnapshot = this.getProjectSnapshot(pid)
         this.addLog({
           op_type: 'CREATE',
           target_type: 'PROJECT',
           target_id: pid,
-          desc: JSON.stringify({
-            key: 'log.project.create',
-            params: { name: project.name }
-          }),
+          event_code: 'PROJECT_CREATE',
+          summary_key: 'log.project.create',
+          summary_params: JSON.stringify({ name: project.name }),
+          undoable: 1,
           old_data: undefined,
-          new_data: JSON.stringify({ project: { ...project, id: pid }, items: project.items })
+          new_data: JSON.stringify(newSnapshot)
         })
       }
     })
@@ -792,17 +1237,17 @@ export class DBManager {
         op_type: 'DELETE',
         target_type: 'PROJECT',
         target_id: id,
-        desc: JSON.stringify({
-          key: 'log.project.delete',
-          params: { name: project.name }
-        }),
+        event_code: 'PROJECT_DELETE',
+        summary_key: 'log.project.delete',
+        summary_params: JSON.stringify({ name: project.name }),
+        undoable: 1,
         old_data: JSON.stringify(snapshot)
       })
     })
     tx()
   }
 
-  public executeDeduction(items: DeductionItem[]) {
+  public executeDeduction(items: DeductionItem[], context: DeductionContext = {}) {
     if (!Array.isArray(items) || items.length === 0) {
       throw new Error('VALIDATION_ERROR:deduction items must be a non-empty array')
     }
@@ -824,7 +1269,7 @@ export class DBManager {
       const oldItems = items.map(item => {
         const oldItem = getStmt.get(item.id) as any
         if (!oldItem) throw new Error(`NOT_FOUND:inventory ${item.id}`)
-        if (oldItem.quantity < item.deductQty) {
+        if (!context.allowNegative && oldItem.quantity < item.deductQty) {
           throw new Error(`INSUFFICIENT_STOCK:${JSON.stringify({
             id: item.id,
             available: oldItem.quantity,
@@ -834,21 +1279,44 @@ export class DBManager {
         return { item, oldItem }
       })
 
+      const details: StockLogDetail[] = []
       for (const { item, oldItem } of oldItems) {
         const newQty = oldItem.quantity - item.deductQty
         stmt.run(newQty, item.id)
-        this.addLog({
-          op_type: 'STOCK',
-          target_type: 'INVENTORY',
-          target_id: item.id,
-          desc: JSON.stringify({
-            key: 'log.inventory.deduct',
-            params: { name: oldItem.name, qty: item.deductQty }
-          }),
-          old_data: JSON.stringify(oldItem),
-          new_data: JSON.stringify({ ...oldItem, quantity: newQty })
+        details.push({
+          inventory_id: item.id,
+          name: oldItem.name || '',
+          value: oldItem.value || '',
+          category: oldItem.category || '',
+          package: oldItem.package || '',
+          before: oldItem.quantity,
+          after: newQty,
+          delta: -item.deductQty
         })
       }
+
+      const total = details.reduce((sum, item) => sum + Math.abs(item.delta), 0)
+      this.addLog({
+        op_type: 'STOCK',
+        target_type: context.projectId ? 'PROJECT' : 'INVENTORY',
+        target_id: context.projectId || 0,
+        event_code: 'BOM_PRODUCTION_DEDUCTION',
+        summary_key: 'log.inventory.bomDeduction',
+        summary_params: JSON.stringify({
+          project: context.projectName || '',
+          productionQuantity: context.productionQuantity || 1,
+          count: details.length,
+          total
+        }),
+        details: JSON.stringify({
+          items: details,
+          projectId: context.projectId || null,
+          projectName: context.projectName || '',
+          productionQuantity: context.productionQuantity || 1,
+          total
+        }),
+        undoable: 1
+      })
     })
     tx()
   }
@@ -907,12 +1375,35 @@ export class DBManager {
     return GENERIC_RULE
   }
 
+  public getAllCategoryRules(): Record<string, CategoryRule> {
+    if (!this.categoryRulesCache) {
+      const customRows = this.db.prepare(
+        "SELECT category, rule_json FROM category_rules"
+      ).all() as Array<{ category: string; rule_json: string }>
+      const rules: Record<string, CategoryRule> = {
+        ...SYSTEM_DEFAULTS,
+        __generic__: GENERIC_RULE
+      }
+      for (const row of customRows) {
+        try {
+          rules[row.category] = JSON.parse(row.rule_json) as CategoryRule
+        } catch {
+          // Ignore malformed legacy custom rules and fall back to defaults.
+        }
+      }
+      this.categoryRulesCache = rules
+    }
+    return JSON.parse(JSON.stringify(this.categoryRulesCache)) as Record<string, CategoryRule>
+  }
+
   public saveCategoryRule(category: string, rule: CategoryRule) {
     this.db.prepare("INSERT OR REPLACE INTO category_rules (category, rule_json) VALUES (?, ?)").run(category, JSON.stringify(rule))
+    this.categoryRulesCache = null
   }
 
   public resetCategoryRule(category: string) {
     this.db.prepare("DELETE FROM category_rules WHERE category = ?").run(category)
+    this.categoryRulesCache = null
   }
   
   public getAllInventoryForExport(): any[] {
@@ -932,7 +1423,7 @@ export class DBManager {
     return projects
   }
 
-  public batchImportInventory(items: any[], mode: ImportStrategy) {
+  public batchImportInventory(items: InventoryImportItem[], mode: ImportStrategy) {
     if (!Array.isArray(items)) {
       throw new Error('VALIDATION_ERROR:import items must be an array')
     }
@@ -952,13 +1443,19 @@ export class DBManager {
     `)
 
     const findStmt = this.db.prepare(`
-      SELECT id, quantity FROM inventory 
+      SELECT * FROM inventory
       WHERE category = ? AND name = ? AND value = ? AND package = ? AND location = ?
     `)
 
     const tx = this.db.transaction(() => {
       let successCount = 0
       let skipCount = 0
+      const changes: Array<{
+        action: 'insert' | 'overwrite'
+        id: number
+        before: StoredInventoryItem | null
+        after: StoredInventoryItem
+      }> = []
 
       for (const item of items) {
         const quantityRaw = item.quantity === '' || item.quantity === undefined || item.quantity === null
@@ -985,7 +1482,7 @@ export class DBManager {
           safeItem.value,
           safeItem.package,
           safeItem.location
-        ) as any
+        ) as StoredInventoryItem | undefined
 
         if (exist) {
           if (mode === 'skip') {
@@ -993,6 +1490,15 @@ export class DBManager {
             continue
           } else if (mode === 'overwrite') {
             updateStmt.run({ ...safeItem, id: exist.id })
+            const after = this.db.prepare(
+              'SELECT * FROM inventory WHERE id = ?'
+            ).get(exist.id) as StoredInventoryItem
+            changes.push({
+              action: 'overwrite',
+              id: exist.id,
+              before: exist,
+              after
+            })
             successCount++
           } else {
             const baseName = safeItem.name || safeItem.value || 'Imported'
@@ -1008,14 +1514,52 @@ export class DBManager {
               suffix++
               candidate = `${baseName} (Imported ${suffix})`
             }
-            insertStmt.run({ ...safeItem, name: candidate })
+            const info = insertStmt.run({ ...safeItem, name: candidate })
+            const id = Number(info.lastInsertRowid)
+            changes.push({
+              action: 'insert',
+              id,
+              before: null,
+              after: this.db.prepare(
+                'SELECT * FROM inventory WHERE id = ?'
+              ).get(id) as StoredInventoryItem
+            })
             successCount++
           }
         } else {
-          insertStmt.run(safeItem)
+          const info = insertStmt.run(safeItem)
+          const id = Number(info.lastInsertRowid)
+          changes.push({
+            action: 'insert',
+            id,
+            before: null,
+            after: this.db.prepare(
+              'SELECT * FROM inventory WHERE id = ?'
+            ).get(id) as StoredInventoryItem
+          })
           successCount++
         }
       }
+
+      this.addLog({
+        op_type: 'IMPORT',
+        target_type: 'INVENTORY',
+        target_id: 0,
+        event_code: 'CSV_IMPORT',
+        summary_key: 'log.inventory.csvImport',
+        summary_params: JSON.stringify({
+          mode,
+          success: successCount,
+          skipped: skipCount
+        }),
+        details: JSON.stringify({
+          mode,
+          changes,
+          success: successCount,
+          skipped: skipCount
+        }),
+        undoable: changes.length > 0 ? 1 : 0
+      })
       return { success: successCount, skipped: skipCount }
     })
 
@@ -1121,7 +1665,27 @@ export class DBManager {
     }
   }
 
-  public saveAppSettings(settings: AppSettings) {
+  public saveAppSettings(settings: AppSettings): void {
+    if (!settings || typeof settings !== 'object') {
+      throw new Error('INVALID_BACKUP_SETTINGS')
+    }
+    if (typeof settings.autoBackup !== 'boolean') {
+      throw new Error('INVALID_BACKUP_SETTINGS:autoBackup')
+    }
+    if (!['exit', '30min', '1h', '4h'].includes(settings.backupFrequency)) {
+      throw new Error('INVALID_BACKUP_SETTINGS:backupFrequency')
+    }
+    if (typeof settings.backupPath !== 'string' || !settings.backupPath.trim()) {
+      throw new Error('INVALID_BACKUP_SETTINGS:backupPath')
+    }
+    if (
+      !Number.isSafeInteger(settings.maxBackups) ||
+      settings.maxBackups < 1 ||
+      settings.maxBackups > 100
+    ) {
+      throw new Error('INVALID_BACKUP_SETTINGS:maxBackups')
+    }
+
     const safeSettings = isDevelopmentStorageMode()
       ? { ...settings, backupPath: path.join(this.userDataPath, 'Backups') }
       : settings

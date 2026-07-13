@@ -4,6 +4,9 @@ import router from './router'
 import './assets/base.css'
 import { i18n } from './utils/i18n' 
 
+const initialTheme = localStorage.getItem('app-theme') === 'light' ? 'light' : 'dark'
+document.documentElement.setAttribute('data-theme', initialTheme)
+
 const app = createApp(App)
 
 app.use(router) 

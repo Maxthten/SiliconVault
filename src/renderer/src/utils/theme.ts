@@ -1,9 +1,6 @@
 import { GlobalThemeOverrides } from 'naive-ui'
 
-export const getThemeOverrides = (isDark: boolean): GlobalThemeOverrides => {
-  if (isDark) {
-    // 暗色模式配置 (保持原样)
-    return {
+const DARK_THEME_OVERRIDES: GlobalThemeOverrides = {
       common: {
         primaryColor: '#0A84FF',
         primaryColorHover: '#409CFF',
@@ -24,10 +21,9 @@ export const getThemeOverrides = (isDark: boolean): GlobalThemeOverrides => {
         padding: '12px 20px',
         boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)'
       }
-    }
-  } else {
-    // 亮色模式配置 (高对比度增强版)
-    return {
+}
+
+const LIGHT_THEME_OVERRIDES: GlobalThemeOverrides = {
       common: {
         primaryColor: '#007AFF',
         primaryColorHover: '#0056B3',
@@ -53,6 +49,8 @@ export const getThemeOverrides = (isDark: boolean): GlobalThemeOverrides => {
         // 消息提示要比卡片更高，所以阴影更重
         boxShadow: '0 10px 30px rgba(0, 0, 0, 0.15)'
       }
-    }
-  }
+}
+
+export const getThemeOverrides = (isDark: boolean): GlobalThemeOverrides => {
+  return isDark ? DARK_THEME_OVERRIDES : LIGHT_THEME_OVERRIDES
 }

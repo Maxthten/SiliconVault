@@ -31,27 +31,39 @@ import {
   MedalOutline,
   TrendingUpOutline 
 } from '@vicons/ionicons5'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { LineChart, PieChart, HeatmapChart } from 'echarts/charts'
+import {
+  CalendarComponent,
+  DataZoomComponent,
+  GridComponent,
+  TooltipComponent,
+  VisualMapComponent
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import type { ECharts } from 'echarts/core'
 import { useI18n } from '../utils/i18n'
+import {
+  getCategoryDisplayName,
+  getPrimaryInventoryField
+} from '../utils/category'
+import { loadCategoryRules } from '../utils/category-rules'
+
+echarts.use([
+  LineChart,
+  PieChart,
+  HeatmapChart,
+  CalendarComponent,
+  DataZoomComponent,
+  GridComponent,
+  TooltipComponent,
+  VisualMapComponent,
+  CanvasRenderer
+])
 
 // 修改：隐藏调试按钮（你可以随时改回 true 来开启）
 const SHOW_DEBUG_BUTTON = false
 const { t, locale } = useI18n()
-
-// 映射表：用于合并新旧数据
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
 
 const loading = ref(false)
 const timeRange = ref<'day' | 'week' | 'month'>('week')
@@ -64,9 +76,12 @@ const chartTimelineRef = ref<HTMLElement | null>(null)
 const chartRoseRef = ref<HTMLElement | null>(null)
 const chartHeatmapRef = ref<HTMLElement | null>(null)
 
-let chartTimeline: echarts.ECharts | null = null
-let chartRose: echarts.ECharts | null = null
-let chartHeatmap: echarts.ECharts | null = null
+let chartTimeline: ECharts | null = null
+let chartRose: ECharts | null = null
+let chartHeatmap: ECharts | null = null
+let themeRenderFrame: number | null = null
+let resizeFrame: number | null = null
+let chartResizeObserver: ResizeObserver | null = null
 
 const data = ref<any>({
   summary: { totalQuantity: 0, topCategory: '-', activeProject: '-', intensity: 'low' },
@@ -134,33 +149,12 @@ const restRanking = computed<any[]>(() => data.value.ranking.slice(3))
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
 const getDisplayName = (item: any) => {
-  // 映射逻辑
-  const rawCat = item.category
-  const ruleKey = LEGACY_MAP[rawCat] || rawCat
-  
-  const rule = categoryRules.value[ruleKey]
-  let targetKey = 'name'
-
-  if (rule?.layout) {
-    if (typeof rule.layout === 'object' && rule.layout.topLeft) {
-      targetKey = rule.layout.topLeft
-    } else if (Array.isArray(rule.layout) && rule.layout[0]) {
-      targetKey = rule.layout[0]
-    }
-  }
+  const targetKey = getPrimaryInventoryField(item, categoryRules.value)
 
   let displayVal = item[targetKey]
 
@@ -177,8 +171,6 @@ const loadData = async () => {
   islandAnimating.value = true
   setTimeout(() => islandAnimating.value = false, 600)
 
-  await loadRules()
-
   try {
     const res = await window.api.getConsumptionStats(timeRange.value, isMock.value)
     
@@ -186,11 +178,7 @@ const loadData = async () => {
     // 将 "Resistor" 和 "电阻" 合并
     const catMap = new Map<string, number>()
     res.categories.forEach((c: any) => {
-      const canonicalKey = LEGACY_MAP[c.name] || c.name
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayLabel = translated !== transKey ? translated : c.name
-      
+      const displayLabel = getCategoryDisplayName(c.name, t)
       catMap.set(displayLabel, (catMap.get(displayLabel) || 0) + c.value)
     })
     
@@ -202,11 +190,7 @@ const loadData = async () => {
     // --- 2. 清洗 ranking (排行榜) ---
     // 统一分类名称的显示
     res.ranking = res.ranking.map((item: any) => {
-      const canonicalKey = LEGACY_MAP[item.category] || item.category
-      const transKey = `categories.${canonicalKey}`
-      const translated = t(transKey)
-      const displayCat = translated !== transKey ? translated : item.category
-      
+      const displayCat = getCategoryDisplayName(item.category, t)
       return { ...item, category: displayCat }
     })
 
@@ -401,9 +385,23 @@ const getHeatmapRange = (range: string) => {
 }
 
 const handleResize = () => {
-  chartTimeline?.resize()
-  chartRose?.resize()
-  chartHeatmap?.resize()
+  if (resizeFrame !== null) return
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    chartTimeline?.resize()
+    chartRose?.resize()
+    chartHeatmap?.resize()
+  })
+}
+
+const scheduleThemeChartRender = () => {
+  if (themeRenderFrame !== null) cancelAnimationFrame(themeRenderFrame)
+  themeRenderFrame = requestAnimationFrame(() => {
+    themeRenderFrame = requestAnimationFrame(() => {
+      themeRenderFrame = null
+      renderCharts()
+    })
+  })
 }
 
 watch(timeRange, () => loadData())
@@ -413,14 +411,26 @@ watch(locale, () => {
 })
 
 onMounted(() => {
-  loadData()
+  loadRules().then(loadData)
   window.addEventListener('resize', handleResize)
+  window.addEventListener('theme-transition-finished', scheduleThemeChartRender)
+
+  chartResizeObserver = new ResizeObserver(handleResize)
+  for (const chartElement of [
+    chartTimelineRef.value,
+    chartRoseRef.value,
+    chartHeatmapRef.value
+  ]) {
+    if (chartElement) chartResizeObserver.observe(chartElement)
+  }
   
   themeObserver = new MutationObserver(() => {
     const newIsDark = document.documentElement.getAttribute('data-theme') !== 'light'
     if (newIsDark !== isDark.value) {
       isDark.value = newIsDark
-      renderCharts()
+      if (!document.documentElement.classList.contains('animating')) {
+        scheduleThemeChartRender()
+      }
     }
   })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
@@ -428,6 +438,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('theme-transition-finished', scheduleThemeChartRender)
+  if (themeRenderFrame !== null) cancelAnimationFrame(themeRenderFrame)
+  if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+  chartResizeObserver?.disconnect()
   themeObserver?.disconnect()
   chartTimeline?.dispose()
   chartRose?.dispose()
@@ -610,6 +624,7 @@ const getRankIcon = (index: number) => {
 
 .dashboard-grid {
   display: flex; flex-direction: column; gap: 20px;
+  container-type: inline-size;
 }
 
 .chart-card {
@@ -638,6 +653,10 @@ const getRankIcon = (index: number) => {
 }
 @media (max-width: 900px) {
   .middle-row { grid-template-columns: 1fr; } 
+}
+
+@container (max-width: 720px) {
+  .middle-row { grid-template-columns: 1fr; }
 }
 
 .top-ranking-container {

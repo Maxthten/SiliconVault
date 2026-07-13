@@ -38,7 +38,7 @@ const { t } = useI18n()
 
 // 0: 正常, 1: 黄色预警, 2: 红色报警
 const warningLevel = ref(0)
-let timer: NodeJS.Timeout | null = null
+let removeInventoryListener: (() => void) | null = null
 
 // 库存健康度检测逻辑
 const checkHealth = async () => {
@@ -52,22 +52,8 @@ const checkHealth = async () => {
   }
 
   try {
-    const grouped = await window.api.fetchInventory({})
-    let red = 0
-    let yellow = 0
-    
-    for (const cat in grouped) {
-      for (const item of grouped[cat]) {
-        const min = item.min_stock ?? 10
-        if (item.quantity <= 0) red++
-        else if (item.quantity <= min) yellow++
-      }
-    }
-
-    if (red > 0) warningLevel.value = 2
-    else if (yellow > 0) warningLevel.value = 1
-    else warningLevel.value = 0
-
+    const health = await window.api.getInventoryHealth()
+    warningLevel.value = health.warningLevel
   } catch (e) {
     console.error("检测失败:", e)
   }
@@ -75,18 +61,23 @@ const checkHealth = async () => {
 
 const navigateTo = (path: string) => {
   router.push(path)
-  checkHealth()
+}
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible') checkHealth()
 }
 
 onMounted(() => {
   checkHealth()
-  timer = setInterval(checkHealth, 10000) 
+  removeInventoryListener = window.api.onInventoryChanged(checkHealth)
   window.addEventListener('inventory-snooze-changed', checkHealth)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  removeInventoryListener?.()
   window.removeEventListener('inventory-snooze-changed', checkHealth)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 

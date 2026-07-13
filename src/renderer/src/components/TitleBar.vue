@@ -16,44 +16,67 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { NIcon } from 'naive-ui'
 import { 
   RemoveOutline, 
   SquareOutline, 
   CloseOutline 
 } from '@vicons/ionicons5'
-import { geekQuotes } from '../data/quotes'
+import {
+  getQuoteCollection,
+  isQuoteLanguageMode,
+  QUOTE_LANGUAGE_CHANGED_EVENT,
+  QUOTE_LANGUAGE_STORAGE_KEY,
+  type QuoteLanguageMode
+} from '../data/quotes'
+
+const { locale } = useI18n()
 
 // 平台检测
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 
 // 语录与动画状态
 const displayText = ref('')
-const currentIndex = ref(Math.floor(Math.random() * geekQuotes.length))
+const quoteLanguageMode = ref<QuoteLanguageMode>('auto')
+const quotes = computed(() => getQuoteCollection(quoteLanguageMode.value, locale.value))
+const quoteActionTitle = computed(() =>
+  locale.value.toLowerCase().startsWith('zh') ? '点击切换下一条' : 'Click for the next quote'
+)
+const currentIndex = ref(Math.floor(Math.random() * quotes.value.length))
 const isTyping = ref(false)
 const isDevelopment = ref(false)
 
-let typeTimer: NodeJS.Timeout | null = null
-let autoSwitchTimer: NodeJS.Timeout | null = null
+let typeTimer: ReturnType<typeof setTimeout> | null = null
+let autoSwitchTimer: ReturnType<typeof setTimeout> | null = null
+
+const loadQuoteLanguageMode = (): QuoteLanguageMode => {
+  const savedMode = localStorage.getItem(QUOTE_LANGUAGE_STORAGE_KEY)
+  return isQuoteLanguageMode(savedMode) ? savedMode : 'auto'
+}
+
+const handleQuoteLanguageChange = (): void => {
+  quoteLanguageMode.value = loadQuoteLanguageMode()
+}
 
 // 窗口控制
-const handleMinimize = () => window.api.windowControl('minimize')
-const handleMaximize = () => window.api.windowControl('maximize')
-const handleClose = () => window.api.windowControl('close')
+const handleMinimize = (): Promise<void> => window.api.windowControl('minimize')
+const handleMaximize = (): Promise<void> => window.api.windowControl('maximize')
+const handleClose = (): Promise<void> => window.api.windowControl('close')
 
 // 启动打字机动画
-const startTypewriter = () => {
+const startTypewriter = (): void => {
   if (typeTimer) clearTimeout(typeTimer)
   if (autoSwitchTimer) clearTimeout(autoSwitchTimer)
 
   displayText.value = ''
   isTyping.value = true
 
-  const fullText = geekQuotes[currentIndex.value]
+  const fullText = quotes.value[currentIndex.value] || ''
   let charIndex = 0
 
-  const typeChar = () => {
+  const typeChar = (): void => {
     if (charIndex < fullText.length) {
       displayText.value += fullText.charAt(charIndex)
       charIndex++
@@ -72,21 +95,28 @@ const startTypewriter = () => {
 }
 
 // 切换下一句
-const switchQuote = () => {
+const switchQuote = (): void => {
   let nextIndex = currentIndex.value + 1
-  if (nextIndex >= geekQuotes.length) nextIndex = 0
+  if (nextIndex >= quotes.value.length) nextIndex = 0
   
   currentIndex.value = nextIndex
   startTypewriter()
 }
 
 // 点击交互
-const handleClick = () => {
+const handleClick = (): void => {
   if (isTyping.value) return
   switchQuote()
 }
 
+watch(quotes, (nextQuotes) => {
+  currentIndex.value = nextQuotes.length > 0 ? currentIndex.value % nextQuotes.length : 0
+  startTypewriter()
+})
+
 onMounted(() => {
+  quoteLanguageMode.value = loadQuoteLanguageMode()
+  window.addEventListener(QUOTE_LANGUAGE_CHANGED_EVENT, handleQuoteLanguageChange)
   startTypewriter()
   window.api.getRuntimeEnvironment()
     .then((environment) => {
@@ -100,6 +130,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (typeTimer) clearTimeout(typeTimer)
   if (autoSwitchTimer) clearTimeout(autoSwitchTimer)
+  window.removeEventListener(QUOTE_LANGUAGE_CHANGED_EVENT, handleQuoteLanguageChange)
 })
 </script>
 
@@ -112,13 +143,20 @@ onUnmounted(() => {
       <span v-if="isDevelopment" class="dev-badge">DEV</span>
     </div>
 
-    <div 
-      class="middle-area" 
-      @click="handleClick"
-      title="点击切换下一条"
-    >
-      <span class="geek-text">{{ displayText }}</span>
-      <span class="cursor" :class="{ 'typing': isTyping }">_</span>
+    <div class="middle-area">
+      <div
+        class="quote-action"
+        role="button"
+        tabindex="0"
+        :title="quoteActionTitle"
+        :aria-label="quoteActionTitle"
+        @click="handleClick"
+        @keydown.enter.prevent="handleClick"
+        @keydown.space.prevent="handleClick"
+      >
+        <span class="geek-text">{{ displayText }}</span>
+        <span class="cursor" :class="{ 'typing': isTyping }">_</span>
+      </div>
     </div>
 
     <div v-if="!isMac" class="window-controls">
@@ -207,13 +245,29 @@ onUnmounted(() => {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   color: var(--text-tertiary);
-  cursor: pointer; 
   padding: 0 20px; 
   -webkit-app-region: drag;
 }
 
-.middle-area:hover .geek-text {
+.quote-action {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 3px 8px;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.quote-action:hover .geek-text,
+.quote-action:focus-visible .geek-text {
   color: var(--text-secondary);
+}
+
+.quote-action:focus-visible {
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.35);
 }
 
 .geek-text {

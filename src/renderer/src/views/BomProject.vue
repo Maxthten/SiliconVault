@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <script setup lang="ts">
-import { ref, watch, h } from 'vue'
+import { ref, watch, h, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { 
   Add, RocketOutline, CreateOutline, TrashOutline, TimeOutline, Search, 
@@ -28,6 +28,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import BomEditModal from '../components/BomEditModal.vue'
 import BomRunModal from '../components/BomRunModal.vue'
 import { useI18n } from '../utils/i18n' // 引入国际化
+import { createLocalResourceUrl } from '../utils/asset-url'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,9 +54,12 @@ const projectNamesMap = ref(new Map<number, string>())
 const showEdit = ref(false)
 const showRun = ref(false)
 const currentProject = ref<any>(null)
+let projectRequestId = 0
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 // --- 数据加载 ---
 const loadProjects = async () => {
+  const requestId = ++projectRequestId
   isLoading.value = true
   try {
     let result: any[] = []
@@ -66,6 +70,7 @@ const loadProjects = async () => {
       result = await window.api.getProjects(searchQuery.value)
     }
 
+    if (requestId !== projectRequestId) return
     projects.value = result
 
     result.forEach(p => {
@@ -75,16 +80,21 @@ const loadProjects = async () => {
     })
 
   } catch (e) {
+    if (requestId !== projectRequestId) return
     console.error(e)
     message.error(t('messages.error.loadFailed'))
   } finally {
-    isLoading.value = false
+    if (requestId === projectRequestId) isLoading.value = false
   }
 }
 
 watch(
   () => route.query,
   (newQuery) => {
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+      searchDebounceTimer = null
+    }
     if (newQuery.ids) {
       isFilterMode.value = true
       filterIds.value = String(newQuery.ids).split(',').map(Number)
@@ -117,7 +127,15 @@ const getProjectName = (id: number) => {
   return projectNamesMap.value.get(id) || `Project #${id}`
 }
 
-watch(searchQuery, () => { loadProjects() })
+watch(searchQuery, () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(loadProjects, 250)
+})
+
+onUnmounted(() => {
+  projectRequestId++
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+})
 
 const onDragStart = () => {
   isDragging.value = true
@@ -164,7 +182,9 @@ const handleSmartClick = (path: string) => {
     window.api.showItemInFolder(path)
   }
 }
-const getImages = (jsonStr?: string) => parseFiles(jsonStr).filter(f => isImage(f)).map(p => ({ url: `local-resource://${p}`, originalPath: p }))
+const getImages = (jsonStr?: string) => parseFiles(jsonStr)
+  .filter(file => isImage(file))
+  .map(resourcePath => ({ url: createLocalResourceUrl(resourcePath), originalPath: resourcePath }))
 const getDocs = (jsonStr?: string) => parseFiles(jsonStr).filter(f => !isImage(f))
 // 这里的文件名不做翻译，只翻译默认的 '文件'
 const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/').pop()?.replace(/^\d+_/, '') || t('bom.file'), key: f, icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }) }))
@@ -242,7 +262,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
           >
             <div class="card-header-row">
               <div class="header-left">
-                <div class="p-name">{{ p.name }}</div>
+                <div class="p-name" :title="p.name">{{ p.name }}</div>
                 <div class="p-date">
                   <n-icon :component="TimeOutline" /> {{ new Date(p.created_at).toLocaleDateString(locale) }}
                 </div>
@@ -257,7 +277,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
                       </div>
                     </template>
                     <div class="preview-popover">
-                      <n-carousel show-arrow autoplay style="width: 280px; height: 280px">
+                      <n-carousel show-arrow class="preview-carousel">
                         <div v-for="(img, idx) in getImages(p.files)" :key="idx" class="carousel-item" @click="openFile(img.originalPath)">
                           <img :src="img.url" class="carousel-img" />
                           <div class="carousel-hint">{{ t('bom.clickToPreview') }}</div>
@@ -279,7 +299,9 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
                 </div>
               </div>
             </div>
-            <div class="p-desc">{{ p.description || t('bom.noDescription') }}</div>
+            <div class="p-desc" :title="p.description || t('bom.noDescription')">
+              {{ p.description || t('bom.noDescription') }}
+            </div>
             <div class="card-actions">
               <Transition name="fade-slide" mode="out-in">
                 <div v-if="!isManageMode" class="mode-run">
@@ -317,7 +339,8 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 <style scoped>
 /* 样式保持不变，此处省略 */
 .bom-page {
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: flex; flex-direction: column; overflow: hidden; 
 }
 .toolbar {
@@ -327,7 +350,7 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-main);
 }
-.search-box { flex: 1; display: flex; align-items: center; }
+.search-box { flex: 1; min-width: 160px; display: flex; align-items: center; }
 
 .tools { display: flex; gap: 12px; }
 
@@ -443,6 +466,10 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 .doc-count { font-size: 10px; font-weight: bold; margin-top: 2px; color: var(--text-secondary); }
 
 .preview-popover { background: #000; }
+.preview-carousel {
+  width: min(280px, calc(100vw - 48px));
+  height: min(280px, calc(100vh - 96px));
+}
 .carousel-item { width: 100%; height: 100%; position: relative; cursor: pointer; display: flex; justify-content: center; align-items: center; }
 .carousel-img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .carousel-hint { position: absolute; bottom: 10px; background: rgba(0,0,0,0.6); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
@@ -454,7 +481,13 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 .mode-run, .mode-manage { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .run-btn { font-weight: bold; width: 100%; }
 .manage-btns { display: flex; gap: 10px; }
-.drag-hint { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; }
+.drag-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 @keyframes jiggle { 0% { transform: rotate(0deg); } 25% { transform: rotate(-0.8deg); } 75% { transform: rotate(0.8deg); } 100% { transform: rotate(0deg); } }
 .is-shaking { animation: jiggle 0.28s infinite ease-in-out; }
@@ -467,5 +500,12 @@ const getDocOptions = (files: string[]) => files.map(f => ({ label: f.split('/')
 }
 .ghost { opacity: 0; background: transparent; border: none; pointer-events: none; }
 
-@media (max-width: 768px) { .toolbar { padding: 12px 16px; } .content { padding: 16px; } .project-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {
+  .toolbar { padding: 12px 16px; flex-wrap: wrap; }
+  .search-box { order: 2; flex-basis: calc(100% - 64px); }
+  .tools { margin-left: auto; }
+  .chip-container { order: 3; flex-basis: 100%; }
+  .content { padding: 16px; }
+  .project-grid { grid-template-columns: 1fr; }
+}
 </style>

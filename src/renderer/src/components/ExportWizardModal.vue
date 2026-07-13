@@ -27,6 +27,13 @@ import {
 } from '@vicons/ionicons5'
 import Papa from 'papaparse'
 import { useI18n } from '../utils/i18n' 
+import { loadCategoryRules } from '../utils/category-rules'
+import {
+  canonicalizeCategory,
+  getCategoryDisplayName,
+  getPrimaryInventoryField,
+  getInventoryDisplayValue
+} from '../utils/category'
 
 const props = defineProps<{ 
   show: boolean
@@ -37,21 +44,6 @@ const emit = defineEmits(['update:show'])
 const message = useMessage()
 const { t } = useI18n()
 
-// 映射表
-const LEGACY_MAP: Record<string, string> = {
-  '电阻': 'Resistor',
-  '电容': 'Capacitor',
-  '电感': 'Inductor',
-  '二极管': 'Diode',
-  '三极管': 'Transistor',
-  '芯片(IC)': 'IC',
-  '连接器': 'Connector',
-  '模块': 'Module',
-  '开关/按键': 'Switch',
-  '其他': 'Other',
-  '未分类': 'Uncategorized'
-}
-
 const activeTab = ref<'inventory' | 'project'>('inventory')
 const isProcessing = ref(false)
 const listData = ref<any[]>([]) 
@@ -61,15 +53,7 @@ const categoryRules = ref<Record<string, any>>({})
 
 const loadRules = async () => {
   try {
-    const cats = await window.api.fetchCategories()
-    const promises = cats.map(async (cat: string) => {
-       const rule = await window.api.getCategoryRule(cat)
-       return { cat, rule }
-    })
-    const results = await Promise.all(promises)
-    const map: Record<string, any> = {}
-    results.forEach(r => map[r.cat] = r.rule)
-    categoryRules.value = map
+    categoryRules.value = await loadCategoryRules()
   } catch (e) { console.error(e) }
 }
 
@@ -82,22 +66,8 @@ const getItemDisplay = (item: any) => {
     }
   }
 
-  const rawCat = item.category
-  const ruleKey = LEGACY_MAP[rawCat] || rawCat
-  const rule = categoryRules.value[ruleKey]
-  
-  let targetKey = 'name'
-
-  if (rule?.layout) {
-    if (typeof rule.layout === 'object' && rule.layout.topLeft) {
-      targetKey = rule.layout.topLeft
-    } else if (Array.isArray(rule.layout) && rule.layout[0]) {
-      targetKey = rule.layout[0]
-    }
-  }
-
-  let primary = item[targetKey]
-  if (!primary) primary = item.name || t('common.unnamed')
+  const targetKey = getPrimaryInventoryField(item, categoryRules.value)
+  const primary = getInventoryDisplayValue(item, categoryRules.value, t('common.unnamed'))
 
   let side = ''
   if (targetKey === 'value') {
@@ -119,10 +89,7 @@ const getItemDisplay = (item: any) => {
 // 获取分类显示名称
 const getCategoryDisplay = (rawCat: string) => {
   if (!rawCat) return ''
-  const canonicalKey = LEGACY_MAP[rawCat] || rawCat
-  const transKey = `categories.${canonicalKey}`
-  const translated = t(transKey)
-  return translated !== transKey ? translated : rawCat
+  return getCategoryDisplayName(rawCat, t)
 }
 
 const loadData = async () => {
@@ -179,7 +146,7 @@ const filteredList = computed(() => {
       const raw = item.category.toLowerCase()
       if (raw.includes(q)) return true 
 
-      const canonical = (LEGACY_MAP[item.category] || item.category).toLowerCase()
+      const canonical = canonicalizeCategory(item.category).toLowerCase()
       if (canonical.includes(q)) return true 
 
       const display = getCategoryDisplay(item.category).toLowerCase()
@@ -397,7 +364,8 @@ const handleExportBundle = async () => {
 
 <style scoped>
 .wizard-modal {
-  width: 640px;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   background-color: var(--bg-modal); 
   border-radius: 16px;
   overflow: hidden;
@@ -427,7 +395,7 @@ const handleExportBundle = async () => {
 }
 .close-icon { color: var(--text-tertiary); }
 
-.modal-content { padding: 20px 24px; }
+.modal-content { padding: 20px 24px; overflow-y: auto; min-height: 0; }
 
 .toolbar-row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .search-wrap { flex: 1; }
@@ -436,7 +404,7 @@ const handleExportBundle = async () => {
   background: var(--bg-sidebar); 
   border-radius: 8px; 
   border: 1px solid var(--border-main);
-  height: 300px; overflow: hidden;
+  height: min(300px, 36vh); min-height: 180px; overflow: hidden;
 }
 .empty-hint { text-align: center; color: var(--text-tertiary); margin-top: 40px; }
 
@@ -472,5 +440,21 @@ const handleExportBundle = async () => {
   background: var(--bg-sidebar);
   border-top: 1px solid var(--border-main);
   display: flex; justify-content: space-between; align-items: center;
+}
+
+@media (max-width: 520px) {
+  .wizard-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .toolbar-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .modal-footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: 10px;
+  }
 }
 </style>

@@ -218,8 +218,8 @@
   },
   "bomEdit": {
     "title": {
-      "edit": "✏️ 编辑 BOM 项目",
-      "create": "🚀 新建 PCB 项目"
+      "edit": "编辑 BOM 项目",
+      "create": "新建 BOM 项目"
     },
     "form": {
       "namePlaceholder": "项目名称 (必填)",
@@ -364,13 +364,13 @@
     "title": "数据中心",
     "export": {
       "title": "导出数据",
-      "desc": "备份库存、项目工程或生成 Excel/CSV 报表",
+      "desc": "导出可共享的业务资源包，或生成 CSV 报表",
       "logs": "导出系统日志",
       "logsTitle": "导出操作日志"
     },
     "import": {
       "title": "导入数据",
-      "desc": "点击或拖入 .csv 表格 / .svdata 资源包",
+      "desc": "点击或拖入 .csv 表格 / .svdata 业务资源包",
       "csvTemplate": "CSV 模板",
       "svdataTemplate": "SVData 模板",
       "saveCsvTitle": "保存 CSV 导入模板"
@@ -389,6 +389,9 @@
       "readPathFailed": "无法读取文件路径",
       "unsupportedFormat": "不支持的文件格式",
       "bundleParseFailed": "资源包解析失败",
+      "unsupportedBundleVersion": "该资源包版本不受当前软件支持",
+      "invalidBundleStructure": "资源包结构或数据校验失败，未执行导入",
+      "unsafeBundlePath": "资源包包含不安全的文件路径，已拒绝导入",
       "importCompleted": "导入完成",
       "csvImportSuccess": "CSV 导入成功"
     }
@@ -509,6 +512,22 @@
       "export": "数据导出",
       "record": "记录"
     },
+    "events": {
+      "manualIn": "手动入库",
+      "manualOut": "手动出库",
+      "batchAdjust": "批量库存调整",
+      "bomDeduction": "BOM 生产扣减",
+      "csvImport": "CSV 导入"
+    },
+    "status": {
+      "undone": "已撤销",
+      "notUndoable": "不可撤销"
+    },
+    "details": {
+      "title": "查看操作明细",
+      "insert": "新增",
+      "overwrite": "覆盖"
+    },
     "prefixes": {
       "create": "新增",
       "update": "修改",
@@ -523,14 +542,21 @@
     "messages": {
       "loadFailed": "无法读取时光机日志",
       "importUndoWarning": "批量导入包含大量数据变更，不支持单步撤销",
+      "notUndoable": "该操作仅用于记录，不支持撤销",
+      "alreadyUndone": "该操作已经撤销",
       "undoSuccess": "已成功撤销",
-      "undoFailed": "撤销失败：可能原数据依赖已丢失"
+      "undoFailed": "撤销失败：数据可能已被后续操作修改，或存在新的依赖关系"
     },
     "empty": "没有找到相关记录"
   },
   "log": {
     "inventory": {
       "stock": "库存变更: {name} {value} ({old} ➝ {new})",
+      "manualIn": "手动入库: {name} {value} +{qty} ({old} ➝ {new})",
+      "manualOut": "手动出库: {name} {value} -{qty} ({old} ➝ {new})",
+      "batchAdjust": "批量调整 {count} 个元件（入库 {inbound}，出库 {outbound}）",
+      "bomDeduction": "BOM 生产扣减: {project}，生产 {productionQuantity} 套，共扣减 {total} 个元件",
+      "csvImport": "CSV 导入完成：成功 {success} 条，跳过 {skipped} 条",
       "create": "新增元件: {name} {value}",
       "update": "修改元件: {name} {value}",
       "delete": "删除元件: {name} {value}",
@@ -543,7 +569,8 @@
     },
     "backup": {
       "export": "导出资源包: {file} (包含 {inv} 元件, {proj} 项目)",
-      "import": "导入资源包 (会话: {session}) - 包含 {inv} 元件, {proj} 项目"
+      "import": "导入资源包 (会话: {session}) - 包含 {inv} 元件, {proj} 项目",
+      "fullBackup": "创建完整应用备份: {file}"
     }
   },
   "settings": {
@@ -561,6 +588,12 @@
       "animation": "页面转场动画",
       "animationDesc": "决定页面切换时的视觉流畅度与速度",
       "animationPlaceholder": "选择切换动画",
+      "quoteLanguage": "顶部名言语言",
+      "quoteLanguageDesc": "选择跟随软件语言、中文意境短句或英文原文",
+      "quoteLanguagePlaceholder": "选择名言语言",
+      "quoteAuto": "跟随软件语言",
+      "quoteChinese": "中文",
+      "quoteEnglish": "英文原文",
       "fast": "极速",
       "normal": "正常",
       "slow": "优雅 (慢)"
@@ -569,7 +602,7 @@
       "path": "数据存储位置",
       "changePath": "迁移数据...",
       "autoBackup": "自动备份",
-      "backupDesc": "定期备份数据库，防止意外丢失",
+      "backupDesc": "生成完整应用备份 (.svbackup)，包含数据库、设置、日志和全部附件",
       "frequency": "备份频率",
       "maxFiles": "保留份数",
       "freqExit": "每次退出时",
@@ -600,7 +633,18 @@
       "freedSpace": "可释放空间",
       "warning": "这些文件未被数据库中的任何元器件或项目引用。删除操作不可逆，请确认。",
       "success": "太棒了！您的数据存储非常干净，没有发现冗余文件。",
-      "cleanNow": "立即清理"
+      "cleanNow": "清理所选文件",
+      "scannedFiles": "已扫描 {count} 个文件",
+      "references": "数据库引用 {count} 个",
+      "missingFiles": "缺失附件 {count} 个",
+      "invalidReferences": "异常引用 {count} 个",
+      "databaseIntegrity": "数据库完整性",
+      "foreignKeyIssues": "外键异常",
+      "reclaimableDatabase": "数据库可回收空间",
+      "selected": "已选择 {selected}/{total}",
+      "selectAll": "全选",
+      "selectNone": "取消全选",
+      "listLimited": "列表仅显示前 {count} 项，可通过全选操作全部文件"
     },
     "dialogs": {
       "migrationTitle": "⚠️ 数据迁移确认",
@@ -612,8 +656,18 @@
       "langChanged": "语言已切换",
       "saved": "设置已保存",
       "pathSelected": "新路径已选中",
-      "vacuumSuccess": "数据库优化完成",
+      "vacuumSuccess": "数据库优化完成：回收 {size}，清理 {orphans} 条孤立关联",
+      "cleanSuccess": "已清理 {files} 个文件，释放 {size}，移除 {dirs} 个空目录",
       "opFailed": "操作失败",
+      "invalidStoragePath": "请选择有效的数据目录，不能使用磁盘根目录",
+      "sameStoragePath": "新目录与当前数据目录相同",
+      "nestedStoragePath": "新旧数据目录不能互相包含",
+      "storageTargetNotEmpty": "目标目录必须为空，请选择一个空目录",
+      "insufficientStorageSpace": "目标磁盘空间不足，无法安全迁移数据",
+      "storageSymlinkRejected": "数据目录中存在符号链接，为避免越界复制已停止迁移",
+      "storageIntegrityFailed": "迁移后的数据库完整性校验失败，原数据未被切换",
+      "backupPathInsideAssets": "备份目录不能位于业务附件目录中，否则会造成备份递归膨胀",
+      "invalidBackupSettings": "备份设置无效，已恢复为上一次保存的设置",
       "resetSuccess": "系统已重置"
     }
   },
