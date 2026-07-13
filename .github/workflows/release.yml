@@ -84,7 +84,7 @@ jobs:
         run: pnpm build
 
       - name: Build macOS installer
-        run: pnpm exec electron-builder --config electron-builder.yml --mac --${{ matrix.arch }}
+        run: pnpm exec electron-builder --config electron-builder.yml --mac --${{ matrix.arch }} --publish never
 
       - name: Upload macOS installer
         uses: actions/upload-artifact@v4
