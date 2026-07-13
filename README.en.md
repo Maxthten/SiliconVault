@@ -441,5 +441,5 @@ Thanks to the following open-source projects for providing technical support to 
 ---
 
 **Version Information**: v1.4.0 (Beta)
-**Last Updated**: 2026-02-11  
+**Last Updated**: 2026-07-13  
 **Technical Support**: If you encounter issues, please submit an Issue or contact the developer
