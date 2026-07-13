@@ -34,6 +34,7 @@ scripts/.quality-integration.cjs
 !.env.example
 
 # Logs and tool caches
+.codegraph/
 .eslintcache
 *.log
 *.log.*

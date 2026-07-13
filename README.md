@@ -147,9 +147,7 @@ SiliconVault/
 │   ├── icon.icns       # macOS图标
 │   ├── icon.ico        # Windows图标
 │   ├── icon.png        # Linux图标
-│   ├── license.txt     # 许可证文件
-│   └── inventory.db    # 示例数据库
-├── build/             # 构建配置和图标
+│   └── license.txt     # 许可证文件
 └── dist/              # 构建输出目录
 ```
 
