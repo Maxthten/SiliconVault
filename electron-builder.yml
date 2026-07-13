@@ -15,7 +15,7 @@ asarUnpack:
 
 win:
   icon: resources/icon.ico
-  artifactName: ${productName}-Setup-${version}.${ext}
+  artifactName: ${productName}-${version}-win-${arch}-Setup.${ext}
   target:
     - target: nsis
       arch:
@@ -37,6 +37,7 @@ nsis:
 mac:
   icon: resources/icon.icns
   category: public.app-category.productivity
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
   target:
     - dmg
 
